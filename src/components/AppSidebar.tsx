@@ -12,7 +12,7 @@ import {
   ListTodo, 
   Clock, 
   FileText, 
-  ReceiptItalianLira,
+  Receipt,
   LogOut
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,7 +28,7 @@ const menuItems = [
   { icon: ListTodo, label: 'Attività', path: '/attivita' },
   { icon: Clock, label: 'Timesheet', path: '/timesheet' },
   { icon: FileText, label: 'Riepilogo Mese', path: '/riepilogo-mese' },
-  { icon: ReceiptItalianLira, label: 'Fatture Infragruppo', path: '/fatture-infragruppo' },
+  { icon: Receipt, label: 'Fatture Infragruppo', path: '/fatture-infragruppo' },
 ];
 
 export const AppSidebar = () => {
