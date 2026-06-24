@@ -1,43 +1,47 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./components/AuthProvider";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { Layout } from "./components/Layout";
-import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
+import { Loading } from "./components/Loading";
+import Login from "./pages/Login";
+import NoRole from "./pages/NoRole";
+import Dashboard from "./pages/Dashboard";
+import Timesheet from "./pages/Timesheet";
+import Riepilogo from "./pages/Riepilogo";
+import Fatture from "./pages/Fatture";
+import Report from "./pages/Report";
+import ImportExcel from "./pages/ImportExcel";
+import Anagrafiche from "./pages/Anagrafiche";
+import Accessi from "./pages/Accessi";
+import Istruzioni from "./pages/Istruzioni";
 
-const queryClient = new QueryClient();
+function ProtectedRoutes() {
+  const { user, loading, roles } = useAuth();
+  if (loading) return <Loading label="Avvio modulo KPI" />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (roles.length === 0) return <NoRole />;
+  return <Layout />;
+}
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
+export default function App() {
+  return (
     <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              {/* Placeholder per le altre rotte richieste */}
-              <Route path="/istruzioni" element={<div className="text-2xl font-bold">Istruzioni</div>} />
-              <Route path="/societa" element={<div className="text-2xl font-bold">Società</div>} />
-              <Route path="/profili-tariffe" element={<div className="text-2xl font-bold">Profili & Tariffe</div>} />
-              <Route path="/dipendenti" element={<div className="text-2xl font-bold">Dipendenti</div>} />
-              <Route path="/commesse" element={<div className="text-2xl font-bold">Commesse</div>} />
-              <Route path="/attivita" element={<div className="text-2xl font-bold">Attività</div>} />
-              <Route path="/timesheet" element={<div className="text-2xl font-bold">Timesheet</div>} />
-              <Route path="/riepilogo-mese" element={<div className="text-2xl font-bold">Riepilogo Mese</div>} />
-              <Route path="/fatture-infragruppo" element={<div className="text-2xl font-bold">Fatture Infragruppo</div>} />
-              
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Layout>
-        </BrowserRouter>
-      </TooltipProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<ProtectedRoutes />}>
+            <Route index element={<Dashboard />} />
+            <Route path="timesheet" element={<Timesheet />} />
+            <Route path="riepilogo" element={<Riepilogo />} />
+            <Route path="fatture" element={<Fatture />} />
+            <Route path="report" element={<Report />} />
+            <Route path="import" element={<ImportExcel />} />
+            <Route path="anagrafiche" element={<Anagrafiche />} />
+            <Route path="accessi" element={<Accessi />} />
+            <Route path="istruzioni" element={<Istruzioni />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
     </AuthProvider>
-  </QueryClientProvider>
-);
-
-export default App;
+  );
+}
