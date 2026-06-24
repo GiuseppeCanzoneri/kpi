@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { supabase, isSupabaseConfigured } from "../integrations/supabase/client";
+import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
 
 export default function Login() {
@@ -36,7 +36,6 @@ export default function Login() {
             <p>Contabilità Ore Infragruppo</p>
           </div>
         </div>
-        {!isSupabaseConfigured && <div className="alert error">Configura prima .env con VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.</div>}
         {message && <div className="alert">{message}</div>}
         <label>
           <span>Email</span>
