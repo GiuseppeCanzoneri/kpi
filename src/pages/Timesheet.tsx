@@ -223,7 +223,7 @@ export default function Timesheet() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className={`status-${row.stato.toLowerCase().replaceAll(" ", "-")}`}>
+                  <tr key={row.id} className={`status-${row.stato.toLowerCase().split(" ").join("-")}`}>
                     <td>{row.data}</td>
                     <td>{row.employee_name}</td>
                     <td>{row.employer_company_code}</td>

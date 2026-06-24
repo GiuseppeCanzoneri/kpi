@@ -147,7 +147,7 @@ async function importEmployees(wb: XLSX.WorkBook, logs: LogRow[]) {
     const company_id = m.companies.get(clean(r["Società datrice"]));
     const tariff_profile_id = m.tariffs.get(clean(r["Codice profilo"]));
     if (!fullName || !company_id || !tariff_profile_id) { logs.push({ sheet: "Dipendenti", row: i + 5, status: "ERRORE", message: "Dipendente, società datrice o profilo mancanti/non trovati" }); continue; }
-    const email = clean(r["Email"]) || `${nome}.${cognome}`.toLowerCase().replaceAll(" ", ".") + "@example.local";
+    const email = clean(r["Email"]) || `${nome}.${cognome}`.toLowerCase().split(" ").join(".") + "@example.local";
     const { error } = await supabase.from("employees").upsert({ nome, cognome, email: email.toLowerCase(), company_id, tariff_profile_id, mansione: clean(r["Mansione"]), attivo: yes(r["Attivo"]) }, { onConflict: "email" });
     logs.push({ sheet: "Dipendenti", row: i + 5, status: error ? "ERRORE" : "OK", message: error?.message ?? `Importato ${fullName}` });
   }
