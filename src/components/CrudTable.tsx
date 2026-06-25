@@ -63,6 +63,9 @@ export function CrudTable({ title, table, fields, canEdit, orderBy = "created_at
     const payload = { ...editing };
     delete payload.created_at;
     delete payload.updated_at;
+    fields.forEach((field) => {
+      if (field.readonly) delete payload[field.key];
+    });
     Object.keys(payload).forEach((k) => {
       if (payload[k] === "") payload[k] = null;
     });

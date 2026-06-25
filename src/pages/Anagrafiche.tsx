@@ -3,7 +3,7 @@ import { PageHeader } from "../components/PageHeader";
 import { CrudTable, type FieldConfig } from "../components/CrudTable";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
-import type { BusinessArea, Company, LocationRow, TariffProfile } from "../types/db";
+import type { BusinessArea, Company, CostCenter, LocationRow, TariffProfile } from "../types/db";
 
 const tabs = [
   "Società",
@@ -12,6 +12,7 @@ const tabs = [
   "Profili tariffari",
   "Dipendenti",
   "Commesse",
+  "Centri di costo",
   "Attività",
 ] as const;
 
@@ -24,6 +25,7 @@ export default function Anagrafiche() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [areas, setAreas] = useState<BusinessArea[]>([]);
   const [tariffs, setTariffs] = useState<TariffProfile[]>([]);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
 
   const canEditMaster = isSuperAdmin;
   const canEditAreaData = isSuperAdmin || isAdminArea;
@@ -34,11 +36,13 @@ export default function Anagrafiche() {
       supabase.from("locations").select("*").order("nome_sede"),
       supabase.from("business_areas").select("*").order("nome_area"),
       supabase.from("tariff_profiles").select("*").order("codice_profilo"),
-    ]).then(([c, l, a, t]) => {
+      supabase.from("cost_centers").select("*").order("codice_centro_costo"),
+    ]).then(([c, l, a, t, cc]) => {
       setCompanies((c.data ?? []) as Company[]);
       setLocations((l.data ?? []) as LocationRow[]);
       setAreas((a.data ?? []) as BusinessArea[]);
       setTariffs((t.data ?? []) as TariffProfile[]);
+      setCostCenters((cc.data ?? []) as CostCenter[]);
     });
   }, []);
 
@@ -46,6 +50,7 @@ export default function Anagrafiche() {
   const locationOptions = useMemo(() => locations.map((l) => ({ value: l.id, label: l.nome_sede })), [locations]);
   const areaOptions = useMemo(() => areas.map((a) => ({ value: a.id, label: `${a.codice_area} - ${a.nome_area}` })), [areas]);
   const tariffOptions = useMemo(() => tariffs.map((t) => ({ value: t.id, label: `${t.codice_profilo} - ${t.nome_profilo}` })), [tariffs]);
+  const costCenterCount = costCenters.length;
 
   return (
     <div>
@@ -60,6 +65,7 @@ export default function Anagrafiche() {
       {tab === "Profili tariffari" && <CrudTable title="Profili tariffari" table="tariff_profiles" canEdit={isSuperAdmin} fields={tariffFields} orderBy="codice_profilo" defaultValues={{ attivo: true, costo_orario_base: 0, overhead_percentuale: 0, margine_percentuale: 0 }} />}
       {tab === "Dipendenti" && <CrudTable title="Dipendenti" table="employees" canEdit={isSuperAdmin} fields={employeeFields(companyOptions, locationOptions, tariffOptions)} orderBy="cognome" defaultValues={{ attivo: true }} />}
       {tab === "Commesse" && <CrudTable title="Commesse" table="projects" canEdit={canEditAreaData} fields={projectFields(companyOptions, areaOptions)} orderBy="codice_commessa" defaultValues={{ stato: "Aperta" }} />}
+      {tab === "Centri di costo" && <CrudTable title={`Centri di costo (${costCenterCount})`} table="cost_centers" canEdit={canEditAreaData} fields={costCenterFields(companyOptions, areaOptions)} orderBy="codice_centro_costo" defaultValues={{ attivo: true }} />}
       {tab === "Attività" && <CrudTable title="Categorie attività" table="activity_categories" canEdit={canEditAreaData} fields={activityFields(areaOptions)} orderBy="codice_attivita" defaultValues={{ attiva: true, fatturabile: true, coefficiente_ore_pesate: 1 }} />}
     </div>
   );
@@ -131,6 +137,15 @@ const projectFields = (companies: { value: string; label: string }[], areas: { v
   { key: "data_apertura", label: "Data apertura", type: "date" },
   { key: "data_chiusura", label: "Data chiusura", type: "date" },
   { key: "note", label: "Note", type: "textarea" },
+];
+
+const costCenterFields = (companies: { value: string; label: string }[], areas: { value: string; label: string }[]): FieldConfig[] => [
+  { key: "codice_centro_costo", label: "Codice centro costo", required: true },
+  { key: "nome_centro_costo", label: "Nome centro costo", required: true },
+  { key: "descrizione", label: "Descrizione", type: "textarea" },
+  { key: "company_id", label: "Società specifica", type: "select", options: companies },
+  { key: "business_area_id", label: "Area", type: "select", options: areas },
+  { key: "attivo", label: "Attivo", type: "boolean" },
 ];
 
 const activityFields = (areas: { value: string; label: string }[]): FieldConfig[] => [

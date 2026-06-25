@@ -91,6 +91,16 @@ export interface ActivityCategory {
   note: string | null;
 }
 
+export interface CostCenter {
+  id: Id;
+  codice_centro_costo: string;
+  nome_centro_costo: string;
+  descrizione: string | null;
+  company_id: Id | null;
+  business_area_id: Id | null;
+  attivo: boolean;
+}
+
 export interface UserAreaRole {
   id: Id;
   user_id: Id | null;
@@ -114,7 +124,7 @@ export interface TimesheetEntry {
   business_area_id: Id;
   project_id: Id;
   activity_category_id: Id;
-  centro_costo: string | null;
+  cost_center_id: Id | null;
   ore: number;
   descrizione: string | null;
   stato: TimesheetStatus;
@@ -145,6 +155,8 @@ export interface TimesheetView extends TimesheetEntry {
   nome_area: string;
   codice_commessa: string;
   descrizione_commessa: string;
+  codice_centro_costo: string | null;
+  nome_centro_costo: string | null;
   codice_attivita: string;
   nome_categoria: string;
   codice_profilo: string;

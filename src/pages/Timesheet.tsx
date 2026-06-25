@@ -3,7 +3,7 @@ import { CheckCircle2, Copy, Plus, RefreshCw, Save, Trash2, XCircle } from "luci
 import { PageHeader } from "../components/PageHeader";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
-import type { ActivityCategory, BusinessArea, Company, Employee, LocationRow, Project, TimesheetStatus, TimesheetView } from "../types/db";
+import type { ActivityCategory, BusinessArea, Company, CostCenter, Employee, LocationRow, Project, TimesheetStatus, TimesheetView } from "../types/db";
 import { euro, numberIt, todayInput } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
 
@@ -18,7 +18,7 @@ type FormState = {
   business_area_id: string;
   project_id: string;
   activity_category_id: string;
-  centro_costo: string;
+  cost_center_id: string;
   ore: number;
   descrizione: string;
   stato: TimesheetStatus;
@@ -33,15 +33,17 @@ const emptyForm: FormState = {
   business_area_id: "",
   project_id: "",
   activity_category_id: "",
-  centro_costo: "",
+  cost_center_id: "",
   ore: 1,
   descrizione: "",
   stato: "Bozza",
   note: "",
 };
 
+const statusClass = (value: string) => `status-${value.toLowerCase().replace(/\s+/g, "-")}`;
+
 export default function Timesheet() {
-  const { isSuperAdmin, isAdminArea, user } = useAuth();
+  const { isSuperAdmin, isAdminArea, user, areaIds } = useAuth();
   const canApprove = isSuperAdmin || isAdminArea;
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -53,21 +55,23 @@ export default function Timesheet() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<ActivityCategory[]>([]);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const loadOptions = async () => {
-    const [companiesRes, locationsRes, areasRes, employeesRes, projectsRes, activitiesRes] = await Promise.all([
+    const [companiesRes, locationsRes, areasRes, employeesRes, projectsRes, activitiesRes, costCentersRes] = await Promise.all([
       supabase.from("companies").select("*").eq("attiva", true).order("codice_societa"),
       supabase.from("locations").select("*").eq("attiva", true).order("nome_sede"),
       supabase.from("business_areas").select("*").eq("attiva", true).order("nome_area"),
       supabase.from("employees").select("*").eq("attivo", true).order("cognome"),
       supabase.from("projects").select("*").order("codice_commessa"),
       supabase.from("activity_categories").select("*").eq("attiva", true).order("codice_attivita"),
+      supabase.from("cost_centers").select("*").eq("attivo", true).order("codice_centro_costo"),
     ]);
 
-    const firstError = [companiesRes, locationsRes, areasRes, employeesRes, projectsRes, activitiesRes].find((r) => r.error)?.error;
+    const firstError = [companiesRes, locationsRes, areasRes, employeesRes, projectsRes, activitiesRes, costCentersRes].find((r) => r.error)?.error;
     if (firstError) throw firstError;
     setCompanies((companiesRes.data ?? []) as Company[]);
     setLocations((locationsRes.data ?? []) as LocationRow[]);
@@ -75,6 +79,7 @@ export default function Timesheet() {
     setEmployees((employeesRes.data ?? []) as Employee[]);
     setProjects((projectsRes.data ?? []) as Project[]);
     setActivities((activitiesRes.data ?? []) as ActivityCategory[]);
+    setCostCenters((costCentersRes.data ?? []) as CostCenter[]);
   };
 
   const loadRows = async () => {
@@ -96,8 +101,8 @@ export default function Timesheet() {
       setLoading(true);
       await loadOptions();
       await loadRows();
-    } catch (e: any) {
-      setError(e.message ?? String(e));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -105,24 +110,52 @@ export default function Timesheet() {
 
   useEffect(() => { loadAll(); }, [month, year]);
 
+  const allowedAreas = useMemo(() => {
+    if (isSuperAdmin) return areas;
+    return areas.filter((a) => areaIds.includes(a.id));
+  }, [areas, isSuperAdmin, areaIds]);
+
   const filteredProjects = useMemo(() => {
-    if (!form?.beneficiary_company_id) return projects;
-    return projects.filter((p) => p.company_id === form.beneficiary_company_id || !p.company_id);
-  }, [projects, form?.beneficiary_company_id]);
+    if (!form) return projects;
+    return projects.filter((p) => {
+      const companyOk = !form.beneficiary_company_id || p.company_id === form.beneficiary_company_id;
+      const areaOk = !form.business_area_id || !p.business_area_id || p.business_area_id === form.business_area_id;
+      return companyOk && areaOk;
+    });
+  }, [projects, form]);
 
   const filteredActivities = useMemo(() => {
     if (!form?.business_area_id) return activities;
     return activities.filter((a) => !a.business_area_id || a.business_area_id === form.business_area_id);
   }, [activities, form?.business_area_id]);
 
+  const filteredCostCenters = useMemo(() => {
+    if (!form?.business_area_id) return costCenters;
+    return costCenters.filter((c) => !c.business_area_id || c.business_area_id === form.business_area_id);
+  }, [costCenters, form?.business_area_id]);
+
   const openNew = () => {
     const defaultEmployee = employees.find((e) => e.email.toLowerCase() === user?.email?.toLowerCase()) ?? employees[0];
+    const defaultArea = allowedAreas.length === 1 ? allowedAreas[0].id : "";
+    const defaultCenters = defaultArea ? costCenters.filter((c) => !c.business_area_id || c.business_area_id === defaultArea) : [];
     setForm({
       ...emptyForm,
       employee_id: defaultEmployee?.id ?? "",
-      business_area_id: areas.length === 1 ? areas[0].id : "",
+      business_area_id: defaultArea,
+      cost_center_id: defaultCenters.length === 1 ? defaultCenters[0].id : "",
       location_id: locations.length === 1 ? locations[0].id : "",
     });
+  };
+
+  const changeArea = (business_area_id: string) => {
+    const areaCenters = costCenters.filter((c) => !c.business_area_id || c.business_area_id === business_area_id);
+    setForm((prev) => prev ? {
+      ...prev,
+      business_area_id,
+      activity_category_id: "",
+      project_id: "",
+      cost_center_id: areaCenters.length === 1 ? areaCenters[0].id : "",
+    } : prev);
   };
 
   const edit = (row: TimesheetView) => {
@@ -135,7 +168,7 @@ export default function Timesheet() {
       business_area_id: row.business_area_id,
       project_id: row.project_id,
       activity_category_id: row.activity_category_id,
-      centro_costo: row.centro_costo ?? "",
+      cost_center_id: row.cost_center_id ?? "",
       ore: Number(row.ore),
       descrizione: row.descrizione ?? "",
       stato: row.stato,
@@ -159,7 +192,7 @@ export default function Timesheet() {
       business_area_id: form.business_area_id,
       project_id: form.project_id,
       activity_category_id: form.activity_category_id,
-      centro_costo: form.centro_costo || null,
+      cost_center_id: form.cost_center_id || null,
       ore: Number(form.ore),
       descrizione: form.descrizione || null,
       stato: form.stato,
@@ -200,7 +233,7 @@ export default function Timesheet() {
     <div>
       <PageHeader
         title="Timesheet"
-        subtitle="Inserimento ore con calcolo automatico di società datrice, profilo, tariffa, ore pesate, importo e movimento infragruppo."
+        subtitle="Inserimento ore per società, area, commessa, centro costo e attività. I calcoli economici sono automatici dal tariffario."
         actions={<><button className="button secondary" onClick={loadAll}><RefreshCw size={16} /> Aggiorna</button><button className="button" onClick={openNew}><Plus size={16} /> Nuova riga</button></>}
       />
 
@@ -218,17 +251,18 @@ export default function Timesheet() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Data</th><th>Dipendente</th><th>Da società</th><th>A società</th><th>Area</th><th>Commessa</th><th>Attività</th><th>Ore</th><th>Ore pesate</th><th>Importo</th><th>Movimento</th><th>Stato</th><th>Azioni</th>
+                  <th>Data</th><th>Dipendente</th><th>Da società</th><th>A società</th><th>Area</th><th>Centro costo</th><th>Commessa</th><th>Attività</th><th>Ore</th><th>Ore pesate</th><th>Importo</th><th>Movimento</th><th>Stato</th><th>Azioni</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className={`status-${row.stato.toLowerCase().split(" ").join("-")}`}>
+                  <tr key={row.id} className={statusClass(row.stato)}>
                     <td>{row.data}</td>
                     <td>{row.employee_name}</td>
                     <td>{row.employer_company_code}</td>
                     <td>{row.beneficiary_company_code}</td>
-                    <td>{row.codice_area}</td>
+                    <td><span className="pill">{row.codice_area}</span></td>
+                    <td>{row.codice_centro_costo ?? <span className="muted">Non assegnato</span>}</td>
                     <td>{row.codice_commessa}</td>
                     <td>{row.codice_attivita}</td>
                     <td>{numberIt(row.ore)}</td>
@@ -258,12 +292,12 @@ export default function Timesheet() {
             <div className="form-grid">
               <label><span>Data *</span><input className="input" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} /></label>
               <label><span>Dipendente *</span><Select value={form.employee_id} onChange={(v) => setForm({ ...form, employee_id: v })} options={employees.map((e) => ({ value: e.id, label: `${e.nome} ${e.cognome}` }))} /></label>
-              <label><span>Società beneficiaria *</span><Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: c.codice_societa }))} /></label>
+              <label><span>Società beneficiaria *</span><Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: `${c.codice_societa} - ${c.ragione_sociale}` }))} /></label>
               <label><span>Sede</span><Select value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} options={locations.map((l) => ({ value: l.id, label: l.nome_sede }))} /></label>
-              <label><span>Area *</span><Select value={form.business_area_id} onChange={(v) => setForm({ ...form, business_area_id: v, activity_category_id: "" })} options={areas.map((a) => ({ value: a.id, label: `${a.codice_area} - ${a.nome_area}` }))} /></label>
+              <label><span>Area *</span><Select value={form.business_area_id} onChange={changeArea} options={allowedAreas.map((a) => ({ value: a.id, label: `${a.codice_area} - ${a.nome_area}` }))} /></label>
+              <label><span>Centro costo</span><Select value={form.cost_center_id} onChange={(v) => setForm({ ...form, cost_center_id: v })} options={filteredCostCenters.map((c) => ({ value: c.id, label: `${c.codice_centro_costo} - ${c.nome_centro_costo}` }))} /></label>
               <label><span>Commessa *</span><Select value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })} options={filteredProjects.map((p) => ({ value: p.id, label: `${p.codice_commessa} - ${p.descrizione_commessa}` }))} /></label>
               <label><span>Attività *</span><Select value={form.activity_category_id} onChange={(v) => setForm({ ...form, activity_category_id: v })} options={filteredActivities.map((a) => ({ value: a.id, label: `${a.codice_attivita} - ${a.nome_categoria}` }))} /></label>
-              <label><span>Centro costo</span><input className="input" value={form.centro_costo} onChange={(e) => setForm({ ...form, centro_costo: e.target.value })} /></label>
               <label><span>Ore *</span><input className="input" type="number" min="0.25" step="0.25" value={form.ore} onChange={(e) => setForm({ ...form, ore: Number(e.target.value) })} /></label>
               {canApprove && <label><span>Stato</span><Select value={form.stato} onChange={(v) => setForm({ ...form, stato: v as TimesheetStatus })} options={statuses.map((s) => ({ value: s, label: s }))} /></label>}
               <label className="full"><span>Descrizione lavoro svolto</span><textarea className="input" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} /></label>

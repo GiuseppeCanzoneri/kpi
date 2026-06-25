@@ -35,8 +35,8 @@ export default function Report() {
 
   const exportCsv = () => {
     const header = ["Data", "Utente", "Da società", "A società", "Commessa", "Area", "Centro costo", "Ore", "Ore pesate", "Tariffa", "Importo", "Categoria", "Descrizione", "Stato"];
-    const csv = [header, ...rows.map((r) => [r.data, r.employee_name, r.employer_company_code, r.beneficiary_company_code, r.codice_commessa, r.codice_area, r.centro_costo ?? "", r.ore, r.ore_pesate, r.tariffa_oraria_visibile ?? "Riservato", r.importo_visibile ?? "Riservato", r.codice_attivita, r.descrizione ?? "", r.stato])]
-      .map((line) => line.map((v) => `"${String(v).split('"').join('""')}"`).join(";"))
+    const csv = [header, ...rows.map((r) => [r.data, r.employee_name, r.employer_company_code, r.beneficiary_company_code, r.codice_commessa, r.codice_area, r.codice_centro_costo ?? "", r.ore, r.ore_pesate, r.tariffa_oraria_visibile ?? "Riservato", r.importo_visibile ?? "Riservato", r.codice_attivita, r.descrizione ?? "", r.stato])]
+      .map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"))
       .join("\n");
     downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `Elenco_Ore_${year}_${month}.csv`);
   };
@@ -52,7 +52,7 @@ export default function Report() {
       {error && <div className="alert error">{error}</div>}
       {loading && <div className="loading">Caricamento...</div>}
       <section className="panel">
-        <p><strong>{rows.length}</strong> righe pronte for il report.</p>
+        <p><strong>{rows.length}</strong> righe pronte per il report.</p>
         <p className="muted">Il report rispetta la visibilità Supabase: SUPER_ADMIN globale, ADMIN_AREA sulle aree assegnate, USER_AREA personale.</p>
       </section>
     </div>

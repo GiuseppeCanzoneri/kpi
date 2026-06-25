@@ -33,7 +33,7 @@ export function generateTimesheetPdf(rows: TimesheetView[], filters: { month: nu
       r.beneficiary_company_code,
       r.codice_commessa,
       r.codice_area,
-      r.centro_costo ?? "",
+      r.codice_centro_costo ?? "",
       numberIt(r.ore),
       numberIt(r.ore_pesate),
       r.tariffa_oraria_visibile === null ? "Riservato" : euro(r.tariffa_oraria_visibile),

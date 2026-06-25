@@ -117,13 +117,14 @@ async function importAreasIfMissing(logs: LogRow[]) {
 }
 
 async function maps() {
-  const [c, t, e, p, a, ba] = await Promise.all([
+  const [c, t, e, p, a, ba, cc] = await Promise.all([
     supabase.from("companies").select("id,codice_societa"),
     supabase.from("tariff_profiles").select("id,codice_profilo"),
     supabase.from("employees").select("id,nome,cognome,email"),
     supabase.from("projects").select("id,codice_commessa"),
     supabase.from("activity_categories").select("id,codice_attivita"),
     supabase.from("business_areas").select("id,codice_area"),
+    supabase.from("cost_centers").select("id,codice_centro_costo"),
   ]);
   return {
     companies: new Map((c.data ?? []).map((x: any) => [x.codice_societa, x.id])),
@@ -132,6 +133,7 @@ async function maps() {
     projects: new Map((p.data ?? []).map((x: any) => [x.codice_commessa, x.id])),
     activities: new Map((a.data ?? []).map((x: any) => [x.codice_attivita, x.id])),
     areas: new Map((ba.data ?? []).map((x: any) => [x.codice_area, x.id])),
+    costCenters: new Map((cc.data ?? []).map((x: any) => [x.codice_centro_costo, x.id])),
   };
 }
 
@@ -147,7 +149,7 @@ async function importEmployees(wb: XLSX.WorkBook, logs: LogRow[]) {
     const company_id = m.companies.get(clean(r["Società datrice"]));
     const tariff_profile_id = m.tariffs.get(clean(r["Codice profilo"]));
     if (!fullName || !company_id || !tariff_profile_id) { logs.push({ sheet: "Dipendenti", row: i + 5, status: "ERRORE", message: "Dipendente, società datrice o profilo mancanti/non trovati" }); continue; }
-    const email = clean(r["Email"]) || `${nome}.${cognome}`.toLowerCase().split(" ").join(".") + "@example.local";
+    const email = clean(r["Email"]) || `${nome}.${cognome}`.toLowerCase().replace(/\s+/g, ".") + "@example.local";
     const { error } = await supabase.from("employees").upsert({ nome, cognome, email: email.toLowerCase(), company_id, tariff_profile_id, mansione: clean(r["Mansione"]), attivo: yes(r["Attivo"]) }, { onConflict: "email" });
     logs.push({ sheet: "Dipendenti", row: i + 5, status: error ? "ERRORE" : "OK", message: error?.message ?? `Importato ${fullName}` });
   }
@@ -189,12 +191,13 @@ async function importTimesheet(wb: XLSX.WorkBook, logs: LogRow[]) {
     const beneficiary_company_id = m.companies.get(clean(r["Società beneficiaria"]));
     const project_id = m.projects.get(clean(r["Commessa"]));
     const activity_category_id = m.activities.get(clean(r["Attività"]));
+    const cost_center_id = m.costCenters.get(clean(r["Centro costo"]));
     const data = excelDate(r["Data"]);
     if (!employee_id || !beneficiary_company_id || !project_id || !activity_category_id || !data || !defaultArea) {
       logs.push({ sheet: "Timesheet", row: i + 5, status: "ERRORE", message: "Dipendente, società beneficiaria, commessa, attività, data o area non trovati" });
       continue;
     }
-    const { error } = await supabase.from("timesheet_entries").insert({ data, employee_id, beneficiary_company_id, business_area_id: defaultArea, project_id, activity_category_id, ore: num(r["Ore"]), descrizione: clean(r["Descrizione lavoro svolto"]), stato: clean(r["Stato"]) || "Bozza", note: clean(r["Note"]) });
+    const { error } = await supabase.from("timesheet_entries").insert({ data, employee_id, beneficiary_company_id, business_area_id: defaultArea, project_id, activity_category_id, ore: num(r["Ore"]), descrizione: clean(r["Descrizione lavoro svolto"]), stato: clean(r["Stato"]) || "Bozza", cost_center_id: cost_center_id || null, note: clean(r["Note"]) });
     logs.push({ sheet: "Timesheet", row: i + 5, status: error ? "ERRORE" : "OK", message: error?.message ?? "Riga ore importata" });
   }
 }

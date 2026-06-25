@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import NoRole from "./pages/NoRole";
 import Dashboard from "./pages/Dashboard";
 import Timesheet from "./pages/Timesheet";
+import Approvazioni from "./pages/Approvazioni";
 import Riepilogo from "./pages/Riepilogo";
 import Fatture from "./pages/Fatture";
 import Report from "./pages/Report";
@@ -31,6 +32,8 @@ export default function App() {
           <Route element={<ProtectedRoutes />}>
             <Route index element={<Dashboard />} />
             <Route path="timesheet" element={<Timesheet />} />
+
+          <Route path="approvazioni" element={<Approvazioni />} />
             <Route path="riepilogo" element={<Riepilogo />} />
             <Route path="fatture" element={<Fatture />} />
             <Route path="report" element={<Report />} />
