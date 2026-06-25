@@ -1,35 +1,37 @@
 import type { ReactNode } from "react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { AppSidebar } from "./AppSidebar";
 import { useAuth } from "../hooks/useAuth";
 
 export function Layout({ children }: { children: ReactNode }) {
-  const { user, signOut, isSuperAdmin, isAdminArea, roles, activeAreaId, areaIds, setActiveAreaId } = useAuth();
-  const roleLabel = isSuperAdmin ? "SUPER_ADMIN" : isAdminArea ? "ADMIN_AREA" : "USER_AREA";
+  const { user, signOut, activeRoleLabel, allAreaIds, activeAreaId, setActiveAreaId } = useAuth();
 
   return (
     <div className="app-shell">
       <AppSidebar />
       <main className="main">
-        <header className="topbar">
+        <div className="topbar">
           <div>
-            <p className="eyebrow">Gestionale interno</p>
-            <h2>KPI / Contabilità ore infragruppo</h2>
+            <span className="eyebrow">Gestionale interno</span>
+            <h1>KPI / Contabilità ore infragruppo</h1>
           </div>
-          <div className="topbar-status">
-            {areaIds.length > 1 && (
-              <select className="input compact" value={activeAreaId ?? ""} onChange={(event) => setActiveAreaId(event.target.value || null)}>
+          <div className="topbar-actions">
+            {allAreaIds.length > 1 && (
+              <select className="input small area-switch" value={activeAreaId ?? ""} onChange={(e) => setActiveAreaId(e.target.value || null)}>
                 <option value="">Tutte le aree abilitate</option>
-                {areaIds.map((id) => (
+                {allAreaIds.map((id) => (
                   <option key={id} value={id}>{id.slice(0, 8)}</option>
                 ))}
               </select>
             )}
-            <span className="status-pill">{roleLabel}</span>
-            <span className="user-chip">{user?.email ?? roles[0]?.email ?? "Utente"}</span>
-            <button type="button" className="button secondary" onClick={() => void signOut()}>Esci</button>
+            <span className="role-chip"><ShieldCheck size={15} /> {activeRoleLabel}</span>
+            <span className="user-chip">{user?.email}</span>
+            <button className="button secondary" type="button" onClick={() => void signOut()}>
+              <LogOut size={16} /> Esci
+            </button>
           </div>
-        </header>
-        {children}
+        </div>
+        <div className="page">{children}</div>
       </main>
     </div>
   );

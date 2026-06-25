@@ -144,6 +144,15 @@ export interface TimesheetEntry {
   created_by: Id | null;
   approved_by: Id | null;
   approved_at: string | null;
+  created_at?: string;
+  updated_at?: string;
+  is_contested?: boolean;
+  contested_by?: Id | null;
+  contested_at?: string | null;
+  contest_reason?: string | null;
+  corrected_by?: Id | null;
+  corrected_at?: string | null;
+  correction_note?: string | null;
 }
 
 export interface TimesheetView extends TimesheetEntry {
@@ -184,6 +193,37 @@ export interface MonthlySummary {
   note: string | null;
 }
 
+export interface MonthlySummaryLive {
+  mese: number;
+  anno: number;
+  employer_company_id: Id;
+  employer_company_code: string | null;
+  employer_company_name: string | null;
+  beneficiary_company_id: Id;
+  beneficiary_company_code: string | null;
+  beneficiary_company_name: string | null;
+  business_area_id: Id;
+  codice_area: string | null;
+  nome_area: string | null;
+  employee_id: Id;
+  employee_name: string;
+  employee_email: string;
+  project_id: Id;
+  codice_commessa: string | null;
+  descrizione_commessa: string | null;
+  activity_category_id: Id;
+  codice_attivita: string | null;
+  nome_categoria: string | null;
+  ore_totali: number;
+  ore_pesate_totali: number;
+  tariffa_media: number;
+  imponibile: number;
+  iva: number;
+  totale_lordo: number;
+  numero_righe: number;
+  contiene_contestazioni: boolean;
+}
+
 export interface IntercompanyInvoice {
   id: Id;
   employer_company_id: Id;
@@ -197,4 +237,13 @@ export interface IntercompanyInvoice {
   numero_fattura: string | null;
   data_fattura: string | null;
   note: string | null;
+}
+
+export interface IntercompanyInvoiceView extends IntercompanyInvoice {
+  employer_company_code: string | null;
+  employer_company_name: string | null;
+  beneficiary_company_code: string | null;
+  beneficiary_company_name: string | null;
+  created_at?: string;
+  updated_at?: string;
 }

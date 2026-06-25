@@ -11,7 +11,10 @@ interface AuthContextValue {
   isSuperAdmin: boolean;
   isAdminArea: boolean;
   canViewAmounts: boolean;
+  allAreaIds: string[];
   areaIds: string[];
+  activeAreaId: string | null;
+  setActiveAreaId: (id: string | null) => void;
   activeRoleLabel: string;
   refreshRoles: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -23,12 +26,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [roles, setRoles] = useState<UserAreaRole[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeAreaId, setActiveAreaId] = useState<string | null>(() => localStorage.getItem("kpi_active_area_id"));
 
-  const refreshRoles = useCallback(async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const currentSession = sessionData.session;
+  const loadRolesForSession = useCallback(async (currentSession: Session | null) => {
     const currentUser = currentSession?.user ?? null;
-    setSession(currentSession ?? null);
+    setSession(currentSession);
 
     if (!currentUser?.email) {
       setRoles([]);
@@ -52,6 +54,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRoles((data ?? []) as UserAreaRole[]);
   }, []);
 
+  const refreshRoles = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    await loadRolesForSession(data.session ?? null);
+  }, [loadRolesForSession]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -61,16 +68,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (mounted) setLoading(false);
     };
 
-    boot();
+    void boot();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async () => {
-      await refreshRoles();
-      if (mounted) setLoading(false);
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setLoading(true);
+      void loadRolesForSession(nextSession).finally(() => {
+        if (mounted) setLoading(false);
+      });
     });
 
-    const onFocus = () => refreshRoles();
+    const onFocus = () => void refreshRoles();
     const onVisibility = () => {
-      if (document.visibilityState === "visible") refreshRoles();
+      if (document.visibilityState === "visible") void refreshRoles();
     };
 
     window.addEventListener("focus", onFocus);
@@ -78,9 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const channel = supabase
       .channel("user-area-roles-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "user_area_roles" }, () => {
-        refreshRoles();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_area_roles" }, () => void refreshRoles())
       .subscribe();
 
     return () => {
@@ -88,16 +95,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       listener.subscription.unsubscribe();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [refreshRoles]);
+  }, [loadRolesForSession, refreshRoles]);
+
+  useEffect(() => {
+    if (activeAreaId) localStorage.setItem("kpi_active_area_id", activeAreaId);
+    else localStorage.removeItem("kpi_active_area_id");
+  }, [activeAreaId]);
 
   const value = useMemo<AuthContextValue>(() => {
     const activeRoles = roles.filter((r) => r.active);
     const isSuperAdmin = activeRoles.some((r) => r.role === "SUPER_ADMIN");
     const isAdminArea = activeRoles.some((r) => r.role === "ADMIN_AREA");
     const canViewAmounts = isSuperAdmin || activeRoles.some((r) => r.can_view_amounts || r.role === "ADMIN_AREA");
-    const areaIds = activeRoles.map((r) => r.business_area_id).filter(Boolean) as string[];
+    const allAreaIds = Array.from(new Set(activeRoles.map((r) => r.business_area_id).filter(Boolean) as string[]));
+    const areaIds = activeAreaId && allAreaIds.includes(activeAreaId) ? [activeAreaId] : allAreaIds;
     const activeRoleLabel = isSuperAdmin ? "SUPER_ADMIN" : isAdminArea ? "ADMIN_AREA" : activeRoles.length ? "USER_AREA" : "NESSUN RUOLO";
 
     return {
@@ -108,16 +121,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isSuperAdmin,
       isAdminArea,
       canViewAmounts,
+      allAreaIds,
       areaIds,
+      activeAreaId: activeAreaId && allAreaIds.includes(activeAreaId) ? activeAreaId : null,
+      setActiveAreaId,
       activeRoleLabel,
       refreshRoles,
       signOut: async () => {
-        await supabase.auth.signOut();
-        setRoles([]);
-        setSession(null);
+        try {
+          await supabase.auth.signOut();
+        } finally {
+          setRoles([]);
+          setSession(null);
+          localStorage.removeItem("kpi_active_area_id");
+          window.location.replace("/login");
+        }
       },
     };
-  }, [session, roles, loading, refreshRoles]);
+  }, [activeAreaId, loading, refreshRoles, roles, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

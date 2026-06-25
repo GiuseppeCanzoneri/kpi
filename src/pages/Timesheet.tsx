@@ -1,24 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, Plus, RefreshCw, Save, Trash2, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, Copy, Edit3, Plus, RefreshCw, Save, Trash2, XCircle } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
-import type {
-  ActivityCategory,
-  BusinessArea,
-  Company,
-  CostCenter,
-  Employee,
-  LocationRow,
-  Project,
-  TimesheetStatus,
-  TimesheetView,
-} from "../types/db";
+import type { ActivityCategory, BusinessArea, Company, CostCenter, Employee, LocationRow, Project, TimesheetView } from "../types/db";
 import { euro, numberIt, todayInput } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
 import { filterRowsByRole, fullEmployeeName } from "../lib/kpiData";
-
-const statuses: TimesheetStatus[] = ["Bozza", "Da correggere", "Approvato", "Fatturato"];
 
 type FormState = {
   id?: string;
@@ -32,8 +20,8 @@ type FormState = {
   cost_center_id: string;
   ore: number;
   descrizione: string;
-  stato: TimesheetStatus;
   note: string;
+  correction_note: string;
 };
 
 const emptyForm: FormState = {
@@ -47,13 +35,13 @@ const emptyForm: FormState = {
   cost_center_id: "",
   ore: 1,
   descrizione: "",
-  stato: "Bozza",
   note: "",
+  correction_note: "",
 };
 
 export default function Timesheet() {
   const { isSuperAdmin, isAdminArea, user, areaIds } = useAuth();
-  const canApprove = isSuperAdmin || isAdminArea;
+  const canManage = isSuperAdmin || isAdminArea;
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -68,6 +56,7 @@ export default function Timesheet() {
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const currentEmployee = useMemo(() => {
     const email = user?.email?.toLowerCase();
@@ -75,7 +64,7 @@ export default function Timesheet() {
     return employees.find((e) => e.email.toLowerCase() === email) ?? null;
   }, [employees, user?.email]);
 
-  const loadOptions = async () => {
+  const loadOptions = useCallback(async () => {
     const [companiesRes, locationsRes, areasRes, employeesRes, projectsRes, activitiesRes, costCentersRes, rolesRes] = await Promise.all([
       supabase.from("companies").select("*").eq("attiva", true).order("codice_societa"),
       supabase.from("locations").select("*").eq("attiva", true).order("nome_sede"),
@@ -92,7 +81,7 @@ export default function Timesheet() {
 
     const allEmployees = (employeesRes.data ?? []) as Employee[];
     const roleRows = (rolesRes.data ?? []) as { email: string; business_area_id: string | null; role: string }[];
-    const adminAreaEmails = new Set(
+    const managedEmails = new Set(
       roleRows
         .filter((r) => r.email && (!r.business_area_id || areaIds.includes(r.business_area_id)))
         .map((r) => r.email.toLowerCase())
@@ -100,7 +89,7 @@ export default function Timesheet() {
 
     let visibleEmployees = allEmployees;
     if (!isSuperAdmin && isAdminArea) {
-      visibleEmployees = allEmployees.filter((employee) => adminAreaEmails.has(employee.email.toLowerCase()));
+      visibleEmployees = allEmployees.filter((employee) => managedEmails.has(employee.email.toLowerCase()) || employee.email.toLowerCase() === user?.email?.toLowerCase());
     }
     if (!isSuperAdmin && !isAdminArea) {
       const email = user?.email?.toLowerCase();
@@ -114,11 +103,12 @@ export default function Timesheet() {
     setProjects(((projectsRes.data ?? []) as Project[]).filter((p) => isSuperAdmin || !p.business_area_id || areaIds.includes(p.business_area_id)));
     setActivities(((activitiesRes.data ?? []) as ActivityCategory[]).filter((a) => isSuperAdmin || !a.business_area_id || areaIds.includes(a.business_area_id)));
     setCostCenters(((costCentersRes.data ?? []) as CostCenter[]).filter((c) => isSuperAdmin || !c.business_area_id || areaIds.includes(c.business_area_id)));
-  };
+  }, [areaIds, isAdminArea, isSuperAdmin, user?.email]);
 
-  const loadRows = async () => {
+  const loadRows = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     const { data, error } = await supabase
       .from("v_timesheet_entries")
       .select("*")
@@ -128,19 +118,14 @@ export default function Timesheet() {
 
     if (error) setError(error.message);
     else {
-      const filtered = filterRowsByRole(
-        (data ?? []) as TimesheetView[],
-        areaIds,
-        user?.email?.toLowerCase() ?? null,
-        isSuperAdmin,
-        isAdminArea
-      );
+      const filtered = filterRowsByRole((data ?? []) as TimesheetView[], areaIds, user?.email?.toLowerCase() ?? null, isSuperAdmin, isAdminArea);
       setRows(filtered);
     }
-    setLoading(false);
-  };
 
-  const loadAll = async () => {
+    setLoading(false);
+  }, [areaIds, isAdminArea, isSuperAdmin, month, user?.email, year]);
+
+  const loadAll = useCallback(async () => {
     try {
       setLoading(true);
       await loadOptions();
@@ -150,11 +135,11 @@ export default function Timesheet() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadOptions, loadRows]);
 
   useEffect(() => {
-    loadAll();
-  }, [month, year, isSuperAdmin, isAdminArea, areaIds.join("|"), user?.email]);
+    void loadAll();
+  }, [loadAll]);
 
   const filteredProjects = useMemo(() => {
     if (!form?.beneficiary_company_id && !form?.business_area_id) return projects;
@@ -190,6 +175,7 @@ export default function Timesheet() {
     const employeeArea = areas.length === 1 ? areas[0].id : "";
     const next = applyAreaDefaults({
       ...emptyForm,
+      data: todayInput(),
       employee_id: defaultEmployee?.id ?? "",
       business_area_id: employeeArea,
       location_id: defaultEmployee?.location_id ?? (locations.length === 1 ? locations[0].id : ""),
@@ -211,27 +197,41 @@ export default function Timesheet() {
       cost_center_id: row.cost_center_id ?? "",
       ore: Number(row.ore),
       descrizione: row.descrizione ?? "",
-      stato: row.stato,
       note: row.note ?? "",
+      correction_note: row.correction_note ?? "",
     });
   };
 
   const duplicate = (row: TimesheetView) => {
-    edit(row);
-    setForm((prev) => prev ? { ...prev, id: undefined, stato: "Bozza" } : prev);
+    setForm({
+      data: row.data,
+      employee_id: row.employee_id,
+      beneficiary_company_id: row.beneficiary_company_id,
+      location_id: row.location_id ?? "",
+      business_area_id: row.business_area_id,
+      project_id: row.project_id,
+      activity_category_id: row.activity_category_id,
+      cost_center_id: row.cost_center_id ?? "",
+      ore: Number(row.ore),
+      descrizione: row.descrizione ?? "",
+      note: row.note ?? "",
+      correction_note: "",
+    });
   };
 
   const save = async () => {
     if (!form) return;
+    setSaving(true);
     setError(null);
 
     const employee = employees.find((e) => e.id === form.employee_id);
     if (!employee) {
       setError("Dipendente non trovato. Vai in Accessi e ruoli e assegna il ruolo: verrà creato anche il dipendente.");
+      setSaving(false);
       return;
     }
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       data: form.data,
       employee_id: form.employee_id,
       beneficiary_company_id: form.beneficiary_company_id,
@@ -242,22 +242,31 @@ export default function Timesheet() {
       cost_center_id: form.cost_center_id || null,
       ore: Number(form.ore),
       descrizione: form.descrizione || null,
-      stato: form.stato,
       note: form.note || null,
+      stato: "Approvato",
     };
+
+    if (form.id && canManage) {
+      payload.corrected_by = user?.id ?? null;
+      payload.corrected_at = new Date().toISOString();
+      payload.correction_note = form.correction_note || "Correzione eseguita da area/admin.";
+    }
 
     if (!payload.employee_id || !payload.beneficiary_company_id || !payload.business_area_id || !payload.project_id || !payload.activity_category_id || !payload.ore) {
       setError("Compila società beneficiaria, area, commessa, attività e ore.");
+      setSaving(false);
       return;
     }
 
-    if (!isSuperAdmin && isAdminArea && !areaIds.includes(payload.business_area_id)) {
+    if (!isSuperAdmin && isAdminArea && !areaIds.includes(payload.business_area_id as string)) {
       setError("Non puoi registrare ore su un'area non assegnata.");
+      setSaving(false);
       return;
     }
 
     if (!isSuperAdmin && !isAdminArea && employee.email.toLowerCase() !== user?.email?.toLowerCase()) {
-      setError("Un utente area può registrare solo le proprie ore.");
+      setError("Un USER_AREA può registrare solo le proprie ore.");
+      setSaving(false);
       return;
     }
 
@@ -265,6 +274,7 @@ export default function Timesheet() {
       ? await supabase.from("timesheet_entries").update(payload).eq("id", form.id)
       : await supabase.from("timesheet_entries").insert(payload);
 
+    setSaving(false);
     if (error) {
       setError(error.message);
       return;
@@ -275,101 +285,121 @@ export default function Timesheet() {
   };
 
   const remove = async (row: TimesheetView) => {
+    if (!canManage && row.employee_email?.toLowerCase() !== user?.email?.toLowerCase()) return;
     if (!window.confirm("Eliminare questa riga timesheet?")) return;
     const { error } = await supabase.from("timesheet_entries").delete().eq("id", row.id);
     if (error) setError(error.message);
     else await loadRows();
   };
 
-  const setStatus = async (row: TimesheetView, stato: TimesheetStatus) => {
-    const { error } = await supabase.from("timesheet_entries").update({ stato }).eq("id", row.id);
+  const contest = async (row: TimesheetView) => {
+    if (!canManage) return;
+    const reason = window.prompt("Motivo della contestazione", row.contest_reason ?? "");
+    if (reason === null) return;
+    const { error } = await supabase
+      .from("timesheet_entries")
+      .update({
+        is_contested: true,
+        contest_reason: reason || "Da verificare",
+        contested_by: user?.id ?? null,
+        contested_at: new Date().toISOString(),
+        stato: "Approvato",
+      })
+      .eq("id", row.id);
+    if (error) setError(error.message);
+    else await loadRows();
+  };
+
+  const clearContest = async (row: TimesheetView) => {
+    if (!canManage) return;
+    const { error } = await supabase
+      .from("timesheet_entries")
+      .update({ is_contested: false, contest_reason: null, contested_by: null, contested_at: null, stato: "Approvato" })
+      .eq("id", row.id);
     if (error) setError(error.message);
     else await loadRows();
   };
 
   const canChooseEmployee = isSuperAdmin || isAdminArea;
+  const totalOre = rows.reduce((sum, r) => sum + Number(r.ore ?? 0), 0);
+  const totalImporto = rows.reduce((sum, r) => sum + Number(r.importo_visibile ?? 0), 0);
+  const contestedCount = rows.filter((r) => r.is_contested).length;
 
   return (
-    <div className="page timesheet-page">
+    <div>
       <PageHeader
         title="Timesheet"
-        subtitle={canChooseEmployee ? "Super Admin vede tutti. Admin Area registra ore per i dipendenti della propria area. User Area registra solo le proprie ore." : "Il dipendente è riconosciuto automaticamente dalla tua utenza."}
+        description="Carica le ore: ogni riga viene registrata subito come Approvato. Admin Area e Super Admin possono contestare o correggere dopo il caricamento."
         actions={
           <>
-            <button className="button secondary" onClick={loadAll}><RefreshCw size={16} /> Aggiorna</button>
+            <button className="button secondary" onClick={() => void loadAll()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
             <button className="button" onClick={openNew}><Plus size={16} /> Nuova riga</button>
           </>
         }
       />
 
-      <div className="filters-bar pro-filters">
-        <label>Mese <input className="input small" type="number" min="1" max="12" value={month} onChange={(e) => setMonth(Number(e.target.value))} /></label>
-        <label>Anno <input className="input small" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label>
-        <div className="filters-summary">
-          <strong>{rows.length}</strong> righe · <strong>{numberIt(rows.reduce((sum, r) => sum + Number(r.ore ?? 0), 0))}</strong> ore
-        </div>
+      <div className="kpi-grid small">
+        <div className="kpi-card"><span>Righe mese</span><strong>{rows.length}</strong><small>Tutte approvate</small></div>
+        <div className="kpi-card"><span>Ore caricate</span><strong>{numberIt(totalOre)}</strong><small>Mese {month}/{year}</small></div>
+        <div className="kpi-card"><span>Contestazioni</span><strong>{contestedCount}</strong><small>Non bloccano i calcoli</small></div>
       </div>
 
-      {error && <div className="alert error"><XCircle size={16} /> {error}</div>}
+      <div className="filters-bar pro-filters">
+        <label>Mese <input className="input small" type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} /></label>
+        <label>Anno <input className="input small" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label>
+        <div className="filters-summary"><strong>{numberIt(totalOre)}</strong> ore · <strong>{euro(totalImporto)}</strong></div>
+      </div>
+
+      {error && <div className="alert error"><AlertTriangle size={16} /> {error}</div>}
       {!currentEmployee && !isSuperAdmin && !isAdminArea && (
         <div className="alert warning">La tua email non è ancora collegata a un dipendente. Chiedi al Super Admin di assegnarti il ruolo in “Accessi e ruoli”.</div>
       )}
       {loading && <div className="loading">Caricamento...</div>}
 
-      <section className="panel flush-panel">
-        {rows.length === 0 ? (
-          <EmptyState title="Nessuna ora registrata" text="Crea una nuova riga timesheet per questo mese." />
-        ) : (
-          <div className="table-wrap elevated-table">
-            <table className="data-table compact">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Dipendente</th>
-                  <th>Da società</th>
-                  <th>A società</th>
-                  <th>Area</th>
-                  <th>Centro costo</th>
-                  <th>Commessa</th>
-                  <th>Attività</th>
-                  <th>Ore</th>
-                  <th>Pesate</th>
-                  <th>Importo</th>
-                  <th>Stato</th>
-                  <th>Azioni</th>
+      {rows.length === 0 ? (
+        <EmptyState title="Nessuna ora nel mese selezionato" text="Crea una nuova riga: verrà salvata direttamente come Approvato." />
+      ) : (
+        <div className="table-wrap elevated-table">
+          <table className="data-table compact">
+            <thead>
+              <tr>
+                <th>Data</th><th>Dipendente</th><th>Da società</th><th>A società</th><th>Area</th><th>Centro costo</th><th>Commessa</th><th>Attività</th><th>Ore</th><th>Pesate</th><th>Importo</th><th>Stato</th><th>Azioni</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className={row.is_contested ? "row-contested" : "status-approvato"}>
+                  <td>{row.data}</td>
+                  <td><strong>{row.employee_name}</strong><br /><span className="muted small-text">{row.employee_email}</span></td>
+                  <td>{row.employer_company_code}</td>
+                  <td>{row.beneficiary_company_code}</td>
+                  <td>{row.codice_area}</td>
+                  <td>{row.codice_centro_costo ?? "—"}</td>
+                  <td>{row.codice_commessa}</td>
+                  <td>{row.codice_attivita}</td>
+                  <td>{numberIt(row.ore)}</td>
+                  <td>{numberIt(row.ore_pesate)}</td>
+                  <td>{row.importo_visibile === null ? "Riservato" : euro(row.importo_visibile)}</td>
+                  <td>
+                    <span className="status-pill approvato">Approvato</span>
+                    {row.is_contested && <><br /><span className="status-pill da-correggere">Contestata</span></>}
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-button" onClick={() => edit(row)} title="Modifica"><Edit3 size={15} /></button>
+                      <button className="icon-button" onClick={() => duplicate(row)} title="Duplica"><Copy size={15} /></button>
+                      {canManage && !row.is_contested && <button className="icon-button warning" onClick={() => void contest(row)} title="Contesta"><XCircle size={15} /></button>}
+                      {canManage && row.is_contested && <button className="icon-button success" onClick={() => void clearContest(row)} title="Chiudi contestazione"><CheckCircle2 size={15} /></button>}
+                      {(canManage || row.employee_email?.toLowerCase() === user?.email?.toLowerCase()) && <button className="icon-button danger" onClick={() => void remove(row)} title="Elimina"><Trash2 size={15} /></button>}
+                    </div>
+                    {row.is_contested && <div className="small-text muted mt">{row.contest_reason}</div>}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className={`status-${row.stato.toLowerCase().replace(/\s+/g, "-")}`}>
-                    <td>{row.data}</td>
-                    <td><strong>{row.employee_name}</strong><br /><span className="muted small-text">{row.employee_email}</span></td>
-                    <td>{row.employer_company_code}</td>
-                    <td>{row.beneficiary_company_code}</td>
-                    <td><span className="pill">{row.codice_area}</span></td>
-                    <td>{row.codice_centro_costo ? `${row.codice_centro_costo}` : <span className="muted">—</span>}</td>
-                    <td>{row.codice_commessa}</td>
-                    <td>{row.codice_attivita}</td>
-                    <td>{numberIt(row.ore)}</td>
-                    <td>{numberIt(row.ore_pesate)}</td>
-                    <td>{row.importo_visibile === null ? "Riservato" : euro(row.importo_visibile)}</td>
-                    <td><span className={`status-pill ${row.stato.toLowerCase().replace(/\s+/g, "-")}`}>{row.stato}</span></td>
-                    <td>
-                      <div className="row-actions">
-                        <button className="icon-button" onClick={() => edit(row)}>Modifica</button>
-                        <button className="icon-button" onClick={() => duplicate(row)}><Copy size={14} /></button>
-                        {canApprove && row.stato !== "Approvato" && <button className="icon-button success" onClick={() => setStatus(row, "Approvato")}><CheckCircle2 size={14} /></button>}
-                        {canApprove && row.stato !== "Da correggere" && <button className="icon-button warning" onClick={() => setStatus(row, "Da correggere")}><XCircle size={14} /></button>}
-                        {row.stato === "Bozza" && <button className="icon-button danger" onClick={() => remove(row)}><Trash2 size={14} /></button>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {form && (
         <div className="modal-backdrop">
@@ -378,79 +408,34 @@ export default function Timesheet() {
               <div>
                 <span className="eyebrow">Timesheet</span>
                 <h3>{form.id ? "Modifica riga" : "Nuova riga ore"}</h3>
+                <p className="muted">La riga verrà salvata sempre come <strong>Approvato</strong>.</p>
               </div>
               <button className="icon-button" onClick={() => setForm(null)}>×</button>
             </div>
 
             <div className="form-grid refined">
-              <label>
-                <span>Data *</span>
-                <input className="input" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} />
-              </label>
-
+              <label>Data *<input className="input" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} /></label>
               {canChooseEmployee ? (
-                <label>
-                  <span>Dipendente *</span>
-                  <Select value={form.employee_id} onChange={(v) => setForm({ ...form, employee_id: v })} options={employees.map((e) => ({ value: e.id, label: `${fullEmployeeName(e)} · ${e.email}` }))} />
-                </label>
+                <label>Dipendente *<Select value={form.employee_id} onChange={(v) => setForm({ ...form, employee_id: v })} options={employees.map((e) => ({ value: e.id, label: `${fullEmployeeName(e)} · ${e.email}` }))} /></label>
               ) : (
-                <label>
-                  <span>Dipendente</span>
-                  <input className="input" value={currentEmployee ? `${fullEmployeeName(currentEmployee)} · ${currentEmployee.email}` : "Utente non collegato"} disabled />
-                </label>
+                <label>Dipendente<input className="input" value={currentEmployee ? `${fullEmployeeName(currentEmployee)} · ${currentEmployee.email}` : "Dipendente non collegato"} disabled /></label>
               )}
-
-              <label>
-                <span>Società beneficiaria *</span>
-                <Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: `${c.codice_societa} · ${c.ragione_sociale}` }))} />
-              </label>
-              <label>
-                <span>Sede</span>
-                <Select value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} options={locations.map((l) => ({ value: l.id, label: l.nome_sede }))} />
-              </label>
-              <label>
-                <span>Area *</span>
-                <Select
-                  value={form.business_area_id}
-                  onChange={(v) => setForm((prev) => prev ? applyAreaDefaults({ ...prev, business_area_id: v, activity_category_id: "", cost_center_id: "", project_id: "" }) : prev)}
-                  options={areas.map((a) => ({ value: a.id, label: `${a.codice_area} · ${a.nome_area}` }))}
-                />
-              </label>
-              <label>
-                <span>Centro costo</span>
-                <Select value={form.cost_center_id} onChange={(v) => setForm({ ...form, cost_center_id: v })} options={filteredCostCenters.map((c) => ({ value: c.id, label: `${c.codice_centro_costo} · ${c.nome_centro_costo}` }))} />
-              </label>
-              <label>
-                <span>Commessa *</span>
-                <Select value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })} options={filteredProjects.map((p) => ({ value: p.id, label: `${p.codice_commessa} · ${p.descrizione_commessa}` }))} />
-              </label>
-              <label>
-                <span>Attività *</span>
-                <Select value={form.activity_category_id} onChange={(v) => setForm({ ...form, activity_category_id: v })} options={filteredActivities.map((a) => ({ value: a.id, label: `${a.codice_attivita} · ${a.nome_categoria}` }))} />
-              </label>
-              <label>
-                <span>Ore *</span>
-                <input className="input" type="number" step="0.25" min="0" value={form.ore} onChange={(e) => setForm({ ...form, ore: Number(e.target.value) })} />
-              </label>
-              {canApprove && (
-                <label>
-                  <span>Stato</span>
-                  <Select value={form.stato} onChange={(v) => setForm({ ...form, stato: v as TimesheetStatus })} options={statuses.map((s) => ({ value: s, label: s }))} />
-                </label>
-              )}
-              <label className="full">
-                <span>Descrizione lavoro svolto</span>
-                <textarea className="input" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} />
-              </label>
-              <label className="full">
-                <span>Note</span>
-                <textarea className="input" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-              </label>
+              <label>Società beneficiaria *<Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: `${c.codice_societa} · ${c.ragione_sociale}` }))} /></label>
+              <label>Sede<Select value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} options={locations.map((l) => ({ value: l.id, label: l.nome_sede }))} /></label>
+              <label>Area *<Select value={form.business_area_id} onChange={(v) => setForm((prev) => prev ? applyAreaDefaults({ ...prev, business_area_id: v, activity_category_id: "", cost_center_id: "", project_id: "" }) : prev)} options={areas.map((a) => ({ value: a.id, label: `${a.codice_area} · ${a.nome_area}` }))} /></label>
+              <label>Centro costo<Select value={form.cost_center_id} onChange={(v) => setForm({ ...form, cost_center_id: v })} options={filteredCostCenters.map((c) => ({ value: c.id, label: `${c.codice_centro_costo} · ${c.nome_centro_costo}` }))} /></label>
+              <label>Commessa *<Select value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })} options={filteredProjects.map((p) => ({ value: p.id, label: `${p.codice_commessa} · ${p.descrizione_commessa}` }))} /></label>
+              <label>Attività *<Select value={form.activity_category_id} onChange={(v) => setForm({ ...form, activity_category_id: v })} options={filteredActivities.map((a) => ({ value: a.id, label: `${a.codice_attivita} · ${a.nome_categoria}` }))} /></label>
+              <label>Ore *<input className="input" type="number" min="0.25" step="0.25" value={form.ore} onChange={(e) => setForm({ ...form, ore: Number(e.target.value) })} /></label>
+              <label>Stato<input className="input" value="Approvato" disabled /></label>
+              <label className="full">Descrizione lavoro svolto<textarea className="input" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} /></label>
+              <label className="full">Note<textarea className="input" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
+              {form.id && canManage && <label className="full">Nota correzione<textarea className="input" value={form.correction_note} onChange={(e) => setForm({ ...form, correction_note: e.target.value })} placeholder="Motivo della modifica o correzione" /></label>}
             </div>
 
             <div className="modal-actions">
               <button className="button secondary" onClick={() => setForm(null)}>Annulla</button>
-              <button className="button" onClick={save}><Save size={16} /> Salva</button>
+              <button className="button" onClick={() => void save()} disabled={saving}><Save size={16} /> {saving ? "Salvataggio..." : "Salva approvato"}</button>
             </div>
           </div>
         </div>

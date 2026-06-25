@@ -1,61 +1,84 @@
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { Layout } from "./components/Layout";
-import { Loading } from "./components/Loading";
+import Accessi from "./pages/Accessi";
+import Anagrafiche from "./pages/Anagrafiche";
+import Fatture from "./pages/Fatture";
+import ImportExcel from "./pages/ImportExcel";
+import Index from "./pages/Index";
+import Istruzioni from "./pages/Istruzioni";
 import Login from "./pages/Login";
 import NoRole from "./pages/NoRole";
-import Dashboard from "./pages/Dashboard";
-import Timesheet from "./pages/Timesheet";
-import Riepilogo from "./pages/Riepilogo";
-import Fatture from "./pages/Fatture";
+import NotFound from "./pages/NotFound";
 import Report from "./pages/Report";
-import ImportExcel from "./pages/ImportExcel";
-import Anagrafiche from "./pages/Anagrafiche";
-import Accessi from "./pages/Accessi";
-import Istruzioni from "./pages/Istruzioni";
-import Approvazione from "./pages/Approvazione";
-import Tariffario from "./pages/Tariffario";
-import CentriCosto from "./pages/CentriCosto";
+import Riepilogo from "./pages/Riepilogo";
+import Timesheet from "./pages/Timesheet";
 
-function ProtectedRoutes() {
-  const { user, loading, roles, isSuperAdmin, isAdminArea } = useAuth();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
-  if (loading) return <Loading />;
+function ProtectedRoute({ children, adminOnly = false, superOnly = false }: { children: ReactElement; adminOnly?: boolean; superOnly?: boolean }) {
+  const { user, roles, loading, isSuperAdmin, isAdminArea } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="center-page">
+        <div className="loading-card">
+          <div className="spinner" />
+          <strong>Caricamento portale</strong>
+          <span>Sto verificando sessione e ruolo operativo.</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) return <Navigate to="/login" replace />;
-  if (roles.length === 0) return <NoRole />;
+  if (roles.length === 0) return <Navigate to="/no-role" replace />;
+  if (superOnly && !isSuperAdmin) return <Navigate to="/" replace />;
+  if (adminOnly && !isSuperAdmin && !isAdminArea) return <Navigate to="/timesheet" replace />;
 
-  const canAdmin = isSuperAdmin || isAdminArea;
-
-  return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/timesheet" element={<Timesheet />} />
-        <Route path="/approvazione" element={canAdmin ? <Approvazione /> : <Navigate to="/" replace />} />
-        <Route path="/riepilogo" element={canAdmin ? <Riepilogo /> : <Navigate to="/" replace />} />
-        <Route path="/fatture" element={canAdmin ? <Fatture /> : <Navigate to="/" replace />} />
-        <Route path="/report" element={<Report />} />
-        <Route path="/anagrafiche" element={canAdmin ? <Anagrafiche /> : <Navigate to="/" replace />} />
-        <Route path="/tariffario" element={isSuperAdmin ? <Tariffario /> : <Navigate to="/" replace />} />
-        <Route path="/centri-costo" element={canAdmin ? <CentriCosto /> : <Navigate to="/" replace />} />
-        <Route path="/import" element={canAdmin ? <ImportExcel /> : <Navigate to="/" replace />} />
-        <Route path="/accessi" element={canAdmin ? <Accessi /> : <Navigate to="/" replace />} />
-        <Route path="/istruzioni" element={<Istruzioni />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Layout>
-  );
+  return <Layout>{children}</Layout>;
 }
 
-export default function App() {
-  return (
-    <BrowserRouter>
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/*" element={<ProtectedRoutes />} />
-        </Routes>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/no-role" element={<NoRole />} />
+            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/timesheet" element={<ProtectedRoute><Timesheet /></ProtectedRoute>} />
+            <Route path="/riepilogo" element={<ProtectedRoute adminOnly><Riepilogo /></ProtectedRoute>} />
+            <Route path="/fatture" element={<ProtectedRoute adminOnly><Fatture /></ProtectedRoute>} />
+            <Route path="/report" element={<ProtectedRoute><Report /></ProtectedRoute>} />
+            <Route path="/anagrafiche" element={<ProtectedRoute adminOnly><Anagrafiche /></ProtectedRoute>} />
+            <Route path="/import" element={<ProtectedRoute adminOnly><ImportExcel /></ProtectedRoute>} />
+            <Route path="/accessi" element={<ProtectedRoute adminOnly><Accessi /></ProtectedRoute>} />
+            <Route path="/istruzioni" element={<ProtectedRoute><Istruzioni /></ProtectedRoute>} />
+            <Route path="/tariffario" element={<ProtectedRoute superOnly><Anagrafiche /></ProtectedRoute>} />
+            <Route path="/centri-costo" element={<ProtectedRoute adminOnly><Anagrafiche /></ProtectedRoute>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+        <Toaster />
+        <Sonner />
       </AuthProvider>
-    </BrowserRouter>
-  );
-}
+    </TooltipProvider>
+  </QueryClientProvider>
+);
+
+export default App;
