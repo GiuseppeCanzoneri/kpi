@@ -38,6 +38,16 @@ export interface BusinessArea {
   attiva: boolean;
 }
 
+export interface CostCenter {
+  id: Id;
+  codice_centro_costo: string;
+  nome_centro_costo: string;
+  descrizione: string | null;
+  company_id: Id | null;
+  business_area_id: Id | null;
+  attivo: boolean;
+}
+
 export interface TariffProfile {
   id: Id;
   codice_profilo: string;
@@ -91,16 +101,6 @@ export interface ActivityCategory {
   note: string | null;
 }
 
-export interface CostCenter {
-  id: Id;
-  codice_centro_costo: string;
-  nome_centro_costo: string;
-  descrizione: string | null;
-  company_id: Id | null;
-  business_area_id: Id | null;
-  attivo: boolean;
-}
-
 export interface UserAreaRole {
   id: Id;
   user_id: Id | null;
@@ -113,6 +113,8 @@ export interface UserAreaRole {
   active: boolean;
   assigned_by: Id | null;
   assigned_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface TimesheetEntry {
@@ -125,6 +127,7 @@ export interface TimesheetEntry {
   project_id: Id;
   activity_category_id: Id;
   cost_center_id: Id | null;
+  centro_costo?: string | null;
   ore: number;
   descrizione: string | null;
   stato: TimesheetStatus;
