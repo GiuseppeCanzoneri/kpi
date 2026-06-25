@@ -24,13 +24,7 @@ function escapeHtml(value: unknown) {
 }
 
 function openPrintDocument(title: string, body: string) {
-  const win = window.open("", "_blank", "noopener,noreferrer,width=1200,height=800");
-  if (!win) {
-    alert("Il browser ha bloccato l'apertura del report. Abilita i popup per generare il PDF.");
-    return;
-  }
-
-  win.document.write(`<!doctype html>
+  const html = `<!doctype html>
 <html lang="it">
 <head>
   <meta charset="utf-8" />
@@ -55,11 +49,52 @@ function openPrintDocument(title: string, body: string) {
   </style>
 </head>
 <body>${body}</body>
-</html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 250);
+</html>`;
+
+  const iframe = document.createElement("iframe");
+  iframe.title = title;
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.style.opacity = "0";
+
+  const cleanup = () => {
+    window.setTimeout(() => iframe.remove(), 60_000);
+  };
+
+  iframe.onload = () => {
+    const frameWindow = iframe.contentWindow;
+    if (!frameWindow) return;
+    frameWindow.focus();
+    window.setTimeout(() => {
+      frameWindow.print();
+      cleanup();
+    }, 250);
+  };
+
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (!doc) {
+    iframe.remove();
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${title.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
 }
+
 
 export function printTimesheetReport(rows: TimesheetView[], filters: { month: number; year: number; title?: string }) {
   const title = filters.title ?? "Report ore registrate";

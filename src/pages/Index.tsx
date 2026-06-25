@@ -12,7 +12,7 @@ export default function Index() {
   const { isSuperAdmin, isAdminArea, areaIds, canViewAmounts, user } = useAuth();
   const canAdmin = isSuperAdmin || isAdminArea;
   const [entries, setEntries] = useState<TimesheetView[]>([]);
-  const [activeProjects, setActiveProjects] = useState(0);
+  const [operationalProjects, setOperationalProjects] = useState(0);
   const [activeEmployees, setActiveEmployees] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -26,14 +26,22 @@ export default function Index() {
         .eq("mese", now.getMonth() + 1)
         .eq("anno", now.getFullYear())
         .eq("stato", "Approvato"),
-      supabase.from("projects").select("id", { count: "exact", head: true }).eq("stato", "Aperta"),
+      supabase.from("projects").select("id,codice_commessa,tipo,stato"),
       supabase.from("employees").select("id", { count: "exact", head: true }).eq("attivo", true),
     ]);
 
     if (!ts.error) {
       setEntries(filterRowsByRole((ts.data ?? []) as TimesheetView[], areaIds, user?.email?.toLowerCase() ?? null, isSuperAdmin, isAdminArea));
     }
-    setActiveProjects(projects.count ?? 0);
+    if (!projects.error) {
+      const operative = (projects.data ?? []).filter((project) => {
+        const code = String(project.codice_commessa ?? "").toUpperCase();
+        const tipo = String(project.tipo ?? "").toLowerCase();
+        const stato = String(project.stato ?? "").toLowerCase();
+        return stato === "aperta" && tipo !== "generale" && !code.startsWith("GEN-");
+      });
+      setOperationalProjects(operative.length);
+    }
     setActiveEmployees(employees.count ?? 0);
     setLoading(false);
   }, [areaIds, isAdminArea, isSuperAdmin, user?.email]);
@@ -76,7 +84,7 @@ export default function Index() {
         <div className="kpi-card"><Clock size={20} /><span>Ore approvate</span><strong>{numberIt(stats.totalHours)}</strong><small>{numberIt(stats.weightedHours)} ore pesate</small></div>
         {canViewAmounts && <div className="kpi-card"><TrendingUp size={20} /><span>Importo mese</span><strong>{euro(stats.totalAmount)}</strong><small>Valore economico</small></div>}
         <div className="kpi-card"><FileSpreadsheet size={20} /><span>Contestazioni</span><strong>{stats.contested}</strong><small>Non bloccano i calcoli</small></div>
-        <div className="kpi-card"><Briefcase size={20} /><span>Commesse aperte</span><strong>{activeProjects}</strong><small>Archivio operativo</small></div>
+        <div className="kpi-card"><Briefcase size={20} /><span>Commesse operative</span><strong>{operationalProjects}</strong><small>Escluse commesse generiche GEN</small></div>
         <div className="kpi-card"><Users size={20} /><span>Dipendenti attivi</span><strong>{activeEmployees}</strong><small>Risorse abilitate</small></div>
       </div>
 

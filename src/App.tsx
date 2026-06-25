@@ -9,6 +9,7 @@ import { Layout } from "./components/Layout";
 import Accessi from "./pages/Accessi";
 import Anagrafiche from "./pages/Anagrafiche";
 import Fatture from "./pages/Fatture";
+import CentriCosto from "./pages/CentriCosto";
 import ImportExcel from "./pages/ImportExcel";
 import Index from "./pages/Index";
 import Istruzioni from "./pages/Istruzioni";
@@ -18,6 +19,7 @@ import NotFound from "./pages/NotFound";
 import Report from "./pages/Report";
 import Riepilogo from "./pages/Riepilogo";
 import Timesheet from "./pages/Timesheet";
+import Tariffario from "./pages/Tariffario";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,8 +71,8 @@ const App = () => (
             <Route path="/import" element={<ProtectedRoute adminOnly><ImportExcel /></ProtectedRoute>} />
             <Route path="/accessi" element={<ProtectedRoute adminOnly><Accessi /></ProtectedRoute>} />
             <Route path="/istruzioni" element={<ProtectedRoute><Istruzioni /></ProtectedRoute>} />
-            <Route path="/tariffario" element={<ProtectedRoute superOnly><Anagrafiche /></ProtectedRoute>} />
-            <Route path="/centri-costo" element={<ProtectedRoute adminOnly><Anagrafiche /></ProtectedRoute>} />
+            <Route path="/tariffario" element={<ProtectedRoute superOnly><Tariffario /></ProtectedRoute>} />
+            <Route path="/centri-costo" element={<ProtectedRoute adminOnly><CentriCosto /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
