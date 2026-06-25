@@ -1,5 +1,7 @@
+"use client";
+
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { AuthChangeEvent, RealtimeChannel, Session, User } from "@supabase/supabase-js";
+import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../integrations/supabase/client";
 import type { UserAreaRole } from "../types/db";
 
@@ -26,92 +28,90 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
 
-  const refreshRoles = useCallback(async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const currentUser = sessionData.session?.user;
-    setSession(sessionData.session ?? null);
-
-    if (!currentUser?.email) {
-      setRoles([]);
-      setActiveAreaId(null);
-      return;
-    }
-
-    const email = currentUser.email.toLowerCase();
+  const fetchRoles = useCallback(async (userId: string, email: string) => {
     const { data, error } = await supabase
       .from("user_area_roles")
       .select("*")
       .eq("active", true)
-      .or(`user_id.eq.${currentUser.id},email.eq.${email}`)
+      .or(`user_id.eq.${userId},email.eq.${email.toLowerCase()}`)
       .order("role", { ascending: true });
 
     if (error) {
-      console.error("Errore caricamento ruoli", error);
-      setRoles([]);
-      setActiveAreaId(null);
-      return;
+      console.error("[auth] Error fetching roles:", error);
+      return [];
     }
-
-    const nextRoles = (data ?? []) as UserAreaRole[];
-    setRoles(nextRoles);
-    const firstArea = nextRoles.find((r) => r.business_area_id)?.business_area_id ?? null;
-    setActiveAreaId((current) => current ?? firstArea);
+    return (data ?? []) as UserAreaRole[];
   }, []);
 
+  const refreshRoles = useCallback(async () => {
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    setSession(currentSession);
+
+    if (currentSession?.user) {
+      const userRoles = await fetchRoles(currentSession.user.id, currentSession.user.email!);
+      setRoles(userRoles);
+      
+      // Set default active area if not set
+      if (!activeAreaId && userRoles.length > 0) {
+        const firstArea = userRoles.find(r => r.business_area_id)?.business_area_id;
+        if (firstArea) setActiveAreaId(firstArea);
+      }
+    } else {
+      setRoles([]);
+      setActiveAreaId(null);
+    }
+    setLoading(false);
+  }, [activeAreaId, fetchRoles]);
+
   useEffect(() => {
-    let mounted = true;
-    let channel: RealtimeChannel | null = null;
+    // Initial session check
+    refreshRoles();
 
-    const start = async () => {
-      setLoading(true);
-      await refreshRoles();
-      if (!mounted) return;
-      setLoading(false);
-    };
-
-    start();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, newSession: Session | null) => {
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       setSession(newSession);
-      await refreshRoles();
-      setLoading(false);
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        await refreshRoles();
+      } else if (event === 'SIGNED_OUT') {
+        setRoles([]);
+        setActiveAreaId(null);
+        setLoading(false);
+      }
     });
 
-    channel = supabase
-      .channel("kpi-user-area-roles-refresh")
-      .on("postgres_changes", { event: "*", schema: "public", table: "user_area_roles" }, () => {
-        void refreshRoles();
+    // Realtime updates for roles
+    const channel = supabase
+      .channel('public:user_area_roles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_area_roles' }, () => {
+        refreshRoles();
       })
       .subscribe();
 
-    const onFocus = () => { void refreshRoles(); };
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void refreshRoles();
+    // Refresh on window focus or visibility change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshRoles();
     };
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener('focus', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      mounted = false;
-      listener.subscription.unsubscribe();
-      if (channel) void supabase.removeChannel(channel);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
+      subscription.unsubscribe();
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', handleVisibilityChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [refreshRoles]);
 
-  const value = useMemo<AuthContextValue>(() => {
-    const activeRoles = roles.filter((r) => r.active);
-    const isSuperAdmin = activeRoles.some((r) => r.role === "SUPER_ADMIN");
-    const isAdminArea = activeRoles.some((r) => r.role === "ADMIN_AREA");
-    const canViewAmounts = isSuperAdmin || activeRoles.some((r) => r.can_view_amounts || r.role === "ADMIN_AREA");
-    const areaIds = Array.from(new Set(activeRoles.map((r) => r.business_area_id).filter(Boolean))) as string[];
+  const value = useMemo(() => {
+    const isSuperAdmin = roles.some(r => r.role === "SUPER_ADMIN");
+    const isAdminArea = roles.some(r => r.role === "ADMIN_AREA");
+    const canViewAmounts = isSuperAdmin || roles.some(r => r.can_view_amounts || r.role === "ADMIN_AREA");
+    const areaIds = Array.from(new Set(roles.map(r => r.business_area_id).filter(Boolean))) as string[];
 
     return {
       session,
       user: session?.user ?? null,
-      roles: activeRoles,
+      roles,
       loading,
       isSuperAdmin,
       isAdminArea,
@@ -122,8 +122,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshRoles,
       signOut: async () => {
         await supabase.auth.signOut();
-        setRoles([]);
-        setActiveAreaId(null);
       },
     };
   }, [session, roles, loading, activeAreaId, refreshRoles]);
@@ -132,9 +130,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth deve essere usato dentro AuthProvider");
-  return ctx;
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
 }
 
 export const useCurrentUserRole = useAuth;

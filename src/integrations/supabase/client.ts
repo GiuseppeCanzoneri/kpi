@@ -1,22 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const SUPABASE_URL = "https://afvadcljctwduhoskccl.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmdmFkY2xqY3R3ZHVob3NrY2NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTYwOTksImV4cCI6MjA5Nzg3MjA5OX0.Z2_vSgGPV5YHK6aQ8e1dB81N-M19GbgIofygV1uvybI";
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn("Supabase non configurato. Crea .env partendo da .env.example");
-}
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 
-export const supabase = createClient(
-  supabaseUrl ?? "https://missing-project.supabase.co",
-  supabaseAnonKey ?? "missing-anon-key",
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  }
-);
-
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const isSupabaseConfigured = true;
