@@ -1,21 +1,18 @@
-export const euro = (value: number | null | undefined) =>
-  new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(value ?? 0));
+export function euro(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(value));
+}
 
-export const numberIt = (value: number | null | undefined, digits = 2) =>
-  new Intl.NumberFormat("it-IT", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(value ?? 0));
+export function numberIt(value: number | null | undefined, digits = 2) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+  return new Intl.NumberFormat("it-IT", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(value));
+}
 
-export const monthName = (month: number) =>
-  new Intl.DateTimeFormat("it-IT", { month: "long" }).format(new Date(2026, month - 1, 1));
+export function monthLabel(month: number, year: number) {
+  return `${String(month).padStart(2, "0")}/${year}`;
+}
 
-export const todayInput = () => new Date().toISOString().slice(0, 10);
-
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+export function statusClass(status: string) {
+  const key = status.toLowerCase().replace(/\s+/g, "-");
+  return `status-badge status-${key}`;
 }

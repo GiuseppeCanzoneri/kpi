@@ -1,6 +1,4 @@
-"use client";
-
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../integrations/supabase/client";
 import type { UserAreaRole } from "../types/db";
@@ -12,6 +10,7 @@ interface AuthContextValue {
   loading: boolean;
   isSuperAdmin: boolean;
   isAdminArea: boolean;
+  isUserArea: boolean;
   canViewAmounts: boolean;
   areaIds: string[];
   activeAreaId: string | null;
@@ -22,91 +21,120 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+async function loadRoles(user: User): Promise<UserAreaRole[]> {
+  const email = user.email?.toLowerCase() ?? "";
+  if (!email) return [];
+
+  const { data, error } = await supabase
+    .from("user_area_roles")
+    .select("*")
+    .eq("active", true)
+    .or(`user_id.eq.${user.id},email.eq.${email}`)
+    .order("role", { ascending: true });
+
+  if (error) {
+    console.error("[KPI] Errore caricamento ruoli", error);
+    return [];
+  }
+
+  return (data ?? []) as UserAreaRole[];
+}
+
+function getDefaultAreaId(rows: UserAreaRole[]): string | null {
+  return rows.find((row) => row.business_area_id)?.business_area_id ?? null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [roles, setRoles] = useState<UserAreaRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
-
-  const fetchRoles = useCallback(async (userId: string, email: string) => {
-    const { data, error } = await supabase
-      .from("user_area_roles")
-      .select("*")
-      .eq("active", true)
-      .or(`user_id.eq.${userId},email.eq.${email.toLowerCase()}`)
-      .order("role", { ascending: true });
-
-    if (error) {
-      console.error("[auth] Error fetching roles:", error);
-      return [];
-    }
-    return (data ?? []) as UserAreaRole[];
-  }, []);
+  const mountedRef = useRef(true);
+  const refreshInProgress = useRef(false);
 
   const refreshRoles = useCallback(async () => {
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
-    setSession(currentSession);
+    if (refreshInProgress.current) return;
+    refreshInProgress.current = true;
 
-    if (currentSession?.user) {
-      const userRoles = await fetchRoles(currentSession.user.id, currentSession.user.email!);
-      setRoles(userRoles);
-      
-      // Set default active area if not set
-      if (!activeAreaId && userRoles.length > 0) {
-        const firstArea = userRoles.find(r => r.business_area_id)?.business_area_id;
-        if (firstArea) setActiveAreaId(firstArea);
-      }
-    } else {
-      setRoles([]);
-      setActiveAreaId(null);
-    }
-    setLoading(false);
-  }, [activeAreaId, fetchRoles]);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const currentSession = data.session;
+      if (!mountedRef.current) return;
 
-  useEffect(() => {
-    // Initial session check
-    refreshRoles();
+      setSession(currentSession);
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      setSession(newSession);
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        await refreshRoles();
-      } else if (event === 'SIGNED_OUT') {
+      if (!currentSession?.user) {
         setRoles([]);
         setActiveAreaId(null);
         setLoading(false);
+        return;
       }
+
+      const nextRoles = await loadRoles(currentSession.user);
+      if (!mountedRef.current) return;
+
+      setRoles(nextRoles);
+      setActiveAreaId((current) => {
+        if (current && nextRoles.some((role) => role.business_area_id === current || role.role === "SUPER_ADMIN")) {
+          return current;
+        }
+        return getDefaultAreaId(nextRoles);
+      });
+      setLoading(false);
+    } finally {
+      refreshInProgress.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void refreshRoles();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+      if (event === "SIGNED_OUT") {
+        setRoles([]);
+        setActiveAreaId(null);
+        setLoading(false);
+        return;
+      }
+      window.setTimeout(() => {
+        void refreshRoles();
+      }, 200);
     });
 
-    // Realtime updates for roles
     const channel = supabase
-      .channel('public:user_area_roles')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_area_roles' }, () => {
-        refreshRoles();
+      .channel("kpi-user-area-roles-refresh")
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_area_roles" }, () => {
+        void refreshRoles();
       })
       .subscribe();
 
-    // Refresh on window focus or visibility change
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refreshRoles();
+    const refreshOnFocus = () => {
+      void refreshRoles();
     };
-    window.addEventListener('focus', handleVisibilityChange);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const refreshOnVisibility = () => {
+      if (document.visibilityState === "visible") void refreshRoles();
+    };
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisibility);
 
     return () => {
-      subscription.unsubscribe();
-      supabase.removeChannel(channel);
-      window.removeEventListener('focus', handleVisibilityChange);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      mountedRef.current = false;
+      authListener.subscription.unsubscribe();
+      void supabase.removeChannel(channel);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisibility);
     };
   }, [refreshRoles]);
 
-  const value = useMemo(() => {
-    const isSuperAdmin = roles.some(r => r.role === "SUPER_ADMIN");
-    const isAdminArea = roles.some(r => r.role === "ADMIN_AREA");
-    const canViewAmounts = isSuperAdmin || roles.some(r => r.can_view_amounts || r.role === "ADMIN_AREA");
-    const areaIds = Array.from(new Set(roles.map(r => r.business_area_id).filter(Boolean))) as string[];
+  const value = useMemo<AuthContextValue>(() => {
+    const isSuperAdmin = roles.some((role) => role.role === "SUPER_ADMIN");
+    const isAdminArea = roles.some((role) => role.role === "ADMIN_AREA");
+    const isUserArea = roles.some((role) => role.role === "USER_AREA");
+    const canViewAmounts = isSuperAdmin || roles.some((role) => role.can_view_amounts || role.role === "ADMIN_AREA");
+    const areaIds = Array.from(new Set(roles.map((role) => role.business_area_id).filter((id): id is string => Boolean(id))));
 
     return {
       session,
@@ -115,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       isSuperAdmin,
       isAdminArea,
+      isUserArea,
       canViewAmounts,
       areaIds,
       activeAreaId,
@@ -124,16 +153,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
       },
     };
-  }, [session, roles, loading, activeAreaId, refreshRoles]);
+  }, [activeAreaId, loading, refreshRoles, roles, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
+  if (!context) throw new Error("useAuth must be used within an AuthProvider");
   return context;
 }
 

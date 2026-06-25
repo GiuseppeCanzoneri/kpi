@@ -1,19 +1,13 @@
-"use client";
-
-import React, { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, Plus, RefreshCw, Save, Trash2, XCircle, Search } from "lucide-react";
-import { PageHeader } from "../components/PageHeader";
-import { supabase } from "../integrations/supabase/client";
-import { useAuth } from "../hooks/useAuth";
-import type { ActivityCategory, BusinessArea, Company, CostCenter, Employee, LocationRow, Project, TimesheetStatus, TimesheetView } from "../types/db";
-import { euro, numberIt, todayInput } from "../lib/format";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
-import { cn } from "@/lib/utils";
+import { PageHeader } from "../components/PageHeader";
+import { useAuth } from "../hooks/useAuth";
+import { supabase } from "../integrations/supabase/client";
+import { euro, numberIt, statusClass } from "../lib/format";
+import { byId, fetchLookupData, filterRowsByRole, type LookupData } from "../lib/kpiData";
+import type { TimesheetView } from "../types/db";
 
-const statuses: TimesheetStatus[] = ["Bozza", "Da correggere", "Approvato", "Fatturato"];
-
-type FormState = {
-  id?: string;
+interface TimesheetForm {
   data: string;
   employee_id: string;
   beneficiary_company_id: string;
@@ -22,14 +16,13 @@ type FormState = {
   project_id: string;
   activity_category_id: string;
   cost_center_id: string;
-  ore: number;
+  ore: string;
   descrizione: string;
-  stato: TimesheetStatus;
   note: string;
-};
+}
 
-const emptyForm: FormState = {
-  data: todayInput(),
+const emptyForm: TimesheetForm = {
+  data: new Date().toISOString().slice(0, 10),
   employee_id: "",
   beneficiary_company_id: "",
   location_id: "",
@@ -37,332 +30,175 @@ const emptyForm: FormState = {
   project_id: "",
   activity_category_id: "",
   cost_center_id: "",
-  ore: 1,
+  ore: "",
   descrizione: "",
-  stato: "Bozza",
   note: "",
 };
 
 export default function Timesheet() {
-  const { isSuperAdmin, isAdminArea, user, areaIds, canViewAmounts } = useAuth();
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const auth = useAuth();
+  const [lookup, setLookup] = useState<LookupData | null>(null);
   const [rows, setRows] = useState<TimesheetView[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [locations, setLocations] = useState<LocationRow[]>([]);
-  const [areas, setAreas] = useState<BusinessArea[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [activities, setActivities] = useState<ActivityCategory[]>([]);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
-  const [form, setForm] = useState<FormState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [form, setForm] = useState<TimesheetForm>(emptyForm);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const loadOptions = async () => {
-    const [c, l, a, e, p, act, cc] = await Promise.all([
-      supabase.from("companies").select("*").eq("attiva", true).order("codice_societa"),
-      supabase.from("locations").select("*").eq("attiva", true).order("nome_sede"),
-      supabase.from("business_areas").select("*").eq("attiva", true).order("nome_area"),
-      supabase.from("employees").select("*").eq("attivo", true).order("cognome"),
-      supabase.from("projects").select("*").order("codice_commessa"),
-      supabase.from("activity_categories").select("*").eq("attiva", true).order("codice_attivita"),
-      supabase.from("cost_centers").select("*").eq("attivo", true).order("codice_centro_costo"),
-    ]);
-
-    setCompanies((c.data ?? []) as Company[]);
-    setLocations((l.data ?? []) as LocationRow[]);
-    setAreas((a.data ?? []) as BusinessArea[]);
-    setEmployees((e.data ?? []) as Employee[]);
-    setProjects((p.data ?? []) as Project[]);
-    setActivities((act.data ?? []) as ActivityCategory[]);
-    setCostCenters((cc.data ?? []) as CostCenter[]);
-  };
-
-  const loadRows = async () => {
+  async function loadAll() {
     setLoading(true);
-    let query = supabase.from("v_timesheet_entries").select("*").eq("mese", month).eq("anno", year);
-    
-    if (!isSuperAdmin && isAdminArea) {
-      query = query.in('business_area_id', areaIds);
-    } else if (!isSuperAdmin && !isAdminArea) {
-      query = query.eq('employee_email', user?.email);
-    }
+    const lookupRows = await fetchLookupData(auth.areaIds, auth.isSuperAdmin);
+    setLookup(lookupRows);
 
-    const { data, error } = await query.order("data", { ascending: false });
-    if (error) setError(error.message);
-    else setRows((data ?? []) as TimesheetView[]);
+    const { data, error } = await supabase
+      .from("v_timesheet_entries")
+      .select("*")
+      .order("data", { ascending: false })
+      .limit(80);
+
+    if (error) {
+      console.error("Errore timesheet", error);
+      setRows([]);
+    } else {
+      setRows(filterRowsByRole((data ?? []) as TimesheetView[], auth.areaIds, auth.user?.email ?? null, auth.isSuperAdmin, auth.isAdminArea));
+    }
     setLoading(false);
-  };
+  }
 
   useEffect(() => {
-    loadOptions();
-    loadRows();
-  }, [month, year, isSuperAdmin, isAdminArea, areaIds]);
+    void loadAll();
+  }, [auth.areaIds.join("|"), auth.isSuperAdmin, auth.isAdminArea, auth.user?.email]);
 
-  const allowedAreas = useMemo(() => {
-    if (isSuperAdmin) return areas;
-    return areas.filter((a) => areaIds.includes(a.id));
-  }, [areas, isSuperAdmin, areaIds]);
+  const availableActivities = useMemo(() => {
+    return (lookup?.activities ?? []).filter((item) => !form.business_area_id || item.business_area_id === form.business_area_id);
+  }, [form.business_area_id, lookup?.activities]);
 
-  const filteredActivities = useMemo(() => {
-    if (!form?.business_area_id) return [];
-    return activities.filter(a => !a.business_area_id || a.business_area_id === form.business_area_id);
-  }, [activities, form?.business_area_id]);
+  const availableCostCenters = useMemo(() => {
+    return (lookup?.costCenters ?? []).filter((item) => !form.business_area_id || !item.business_area_id || item.business_area_id === form.business_area_id);
+  }, [form.business_area_id, lookup?.costCenters]);
 
-  const filteredCostCenters = useMemo(() => {
-    if (!form?.business_area_id) return [];
-    return costCenters.filter(c => !c.business_area_id || c.business_area_id === form.business_area_id);
-  }, [costCenters, form?.business_area_id]);
+  const availableProjects = useMemo(() => {
+    return (lookup?.projects ?? []).filter((item) => !form.business_area_id || !item.business_area_id || item.business_area_id === form.business_area_id);
+  }, [form.business_area_id, lookup?.projects]);
 
-  const filteredRows = useMemo(() => {
-    if (!searchTerm) return rows;
-    const s = searchTerm.toLowerCase();
-    return rows.filter(r => 
-      r.employee_name.toLowerCase().includes(s) || 
-      r.codice_commessa.toLowerCase().includes(s) ||
-      r.descrizione?.toLowerCase().includes(s)
-    );
-  }, [rows, searchTerm]);
+  useEffect(() => {
+    if (availableCostCenters.length === 1 && form.business_area_id && !form.cost_center_id) {
+      setForm((current) => ({ ...current, cost_center_id: availableCostCenters[0].id }));
+    }
+  }, [availableCostCenters, form.business_area_id, form.cost_center_id]);
 
-  const openNew = () => {
-    const me = employees.find(e => e.email.toLowerCase() === user?.email?.toLowerCase());
-    const defaultArea = allowedAreas.length === 1 ? allowedAreas[0].id : "";
-    
-    setForm({
-      ...emptyForm,
-      employee_id: me?.id || "",
-      business_area_id: defaultArea,
+  function update<K extends keyof TimesheetForm>(key: K, value: TimesheetForm[K]) {
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "business_area_id") {
+        next.activity_category_id = "";
+        next.cost_center_id = "";
+        next.project_id = "";
+      }
+      return next;
     });
-  };
+  }
 
-  const save = async () => {
-    if (!form) return;
-    setError(null);
-    
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lookup) return;
+
+    const employee = byId(lookup.employees, form.employee_id);
+    const activity = byId(lookup.activities, form.activity_category_id);
+    const tariff = byId(lookup.tariffProfiles, employee?.tariff_profile_id);
+    const ore = Number(form.ore);
+
+    if (!employee || !activity || !tariff || !form.beneficiary_company_id || !form.business_area_id || !form.project_id || !ore || ore <= 0) {
+      setMessage("Compila dipendente, società beneficiaria, area, commessa, attività e ore.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+
+    const date = new Date(form.data);
+    const employerCompanyId = employee.company_id;
+    const tariffa = Number(tariff.tariffa_oraria_calcolata);
+    const coefficiente = Number(activity.coefficiente_ore_pesate);
     const payload = {
       data: form.data,
-      employee_id: form.employee_id,
+      employee_id: employee.id,
       beneficiary_company_id: form.beneficiary_company_id,
-      location_id: form.location_id || null,
+      location_id: form.location_id || employee.location_id,
       business_area_id: form.business_area_id,
       project_id: form.project_id,
-      activity_category_id: form.activity_category_id,
+      activity_category_id: activity.id,
       cost_center_id: form.cost_center_id || null,
-      ore: Number(form.ore),
+      ore,
       descrizione: form.descrizione || null,
-      stato: form.stato,
+      stato: "Bozza",
       note: form.note || null,
+      employer_company_id: employerCompanyId,
+      tariff_profile_id: tariff.id,
+      tariffa_oraria: tariffa,
+      coefficiente_ore_pesate: coefficiente,
+      ore_pesate: ore * coefficiente,
+      importo: ore * tariffa,
+      tipo_movimento: employerCompanyId === form.beneficiary_company_id ? "Interno non fatturabile" : "Infragruppo fatturabile",
+      mese: date.getMonth() + 1,
+      anno: date.getFullYear(),
+      created_by: auth.user?.id ?? null,
     };
 
-    const { error } = form.id
-      ? await supabase.from("timesheet_entries").update(payload).eq("id", form.id)
-      : await supabase.from("timesheet_entries").insert(payload);
+    const { error } = await supabase.from("timesheet_entries").insert(payload);
+    setSaving(false);
 
-    if (error) setError(error.message);
-    else {
-      setForm(null);
-      loadRows();
+    if (error) {
+      console.error("Errore salvataggio timesheet", error);
+      setMessage(error.message);
+      return;
     }
-  };
 
-  const remove = async (id: string) => {
-    if (!confirm("Eliminare questa riga?")) return;
-    const { error } = await supabase.from("timesheet_entries").delete().eq("id", id);
-    if (error) setError(error.message);
-    else loadRows();
-  };
+    setForm(emptyForm);
+    setMessage("Riga ore salvata in bozza.");
+    await loadAll();
+  }
+
+  async function deleteRow(row: TimesheetView) {
+    if (row.stato !== "Bozza" && !auth.isSuperAdmin) {
+      setMessage("Puoi eliminare solo righe in bozza.");
+      return;
+    }
+    const { error } = await supabase.from("timesheet_entries").delete().eq("id", row.id);
+    if (error) setMessage(error.message);
+    await loadAll();
+  }
 
   return (
-    <div className="space-y-6">
-      <PageHeader 
-        title="Timesheet" 
-        subtitle="Gestione ore lavorate, attività e centri di costo."
-        actions={
-          <div className="flex gap-2">
-            <button className="button secondary" onClick={loadRows}><RefreshCw size={16} /></button>
-            <button className="button primary" onClick={openNew}><Plus size={16} /> Nuova Riga</button>
-          </div>
-        }
-      />
+    <section>
+      <PageHeader title="Timesheet" subtitle="Inserisci ore reali, collegate ad area, centro costo, commessa e attività." />
+      {message ? <div className="notice">{message}</div> : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-500">Mese:</span>
-            <input type="number" className="input w-20" min={1} max={12} value={month} onChange={e => setMonth(Number(e.target.value))} />
+      <form className="panel form-grid" onSubmit={(event) => void submit(event)}>
+        <label>Data<input className="input" type="date" value={form.data} onChange={(event) => update("data", event.target.value)} /></label>
+        <label>Dipendente<select className="input" value={form.employee_id} onChange={(event) => update("employee_id", event.target.value)}><option value="">Seleziona</option>{lookup?.employees.map((item) => <option key={item.id} value={item.id}>{item.cognome} {item.nome}</option>)}</select></label>
+        <label>Società beneficiaria<select className="input" value={form.beneficiary_company_id} onChange={(event) => update("beneficiary_company_id", event.target.value)}><option value="">Seleziona</option>{lookup?.companies.map((item) => <option key={item.id} value={item.id}>{item.codice_societa} - {item.ragione_sociale}</option>)}</select></label>
+        <label>Sede<select className="input" value={form.location_id} onChange={(event) => update("location_id", event.target.value)}><option value="">Non specificata</option>{lookup?.locations.map((item) => <option key={item.id} value={item.id}>{item.nome_sede}</option>)}</select></label>
+        <label>Area<select className="input" value={form.business_area_id} onChange={(event) => update("business_area_id", event.target.value)}><option value="">Seleziona</option>{lookup?.areas.map((item) => <option key={item.id} value={item.id}>{item.codice_area} - {item.nome_area}</option>)}</select></label>
+        <label>Commessa<select className="input" value={form.project_id} onChange={(event) => update("project_id", event.target.value)}><option value="">Seleziona</option>{availableProjects.map((item) => <option key={item.id} value={item.id}>{item.codice_commessa} - {item.descrizione_commessa}</option>)}</select></label>
+        <label>Centro costo<select className="input" value={form.cost_center_id} onChange={(event) => update("cost_center_id", event.target.value)}><option value="">Nessuno</option>{availableCostCenters.map((item) => <option key={item.id} value={item.id}>{item.codice_centro_costo} - {item.nome_centro_costo}</option>)}</select></label>
+        <label>Attività<select className="input" value={form.activity_category_id} onChange={(event) => update("activity_category_id", event.target.value)}><option value="">Seleziona</option>{availableActivities.map((item) => <option key={item.id} value={item.id}>{item.codice_attivita} - {item.nome_categoria}</option>)}</select></label>
+        <label>Ore<input className="input" type="number" min="0" step="0.25" value={form.ore} onChange={(event) => update("ore", event.target.value)} /></label>
+        <label className="wide">Descrizione<textarea className="input" rows={3} value={form.descrizione} onChange={(event) => update("descrizione", event.target.value)} /></label>
+        <label className="wide">Note<textarea className="input" rows={2} value={form.note} onChange={(event) => update("note", event.target.value)} /></label>
+        <div className="wide form-actions"><button className="button primary" type="submit" disabled={saving}>{saving ? "Salvataggio…" : "Salva riga ore"}</button></div>
+      </form>
+
+      <div className="panel table-panel">
+        <div className="panel-title"><h3>Ultime righe</h3><span>{loading ? "Caricamento…" : `${rows.length} righe`}</span></div>
+        {rows.length === 0 ? <EmptyState title="Nessuna riga" text="Le righe inserite saranno visibili qui." /> : (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Data</th><th>Utente</th><th>Area</th><th>Centro costo</th><th>Commessa</th><th>Ore</th><th>Pesate</th><th>Stato</th><th>Importo</th><th /></tr></thead>
+              <tbody>{rows.map((row) => <tr key={row.id}><td>{row.data}</td><td>{row.employee_name}</td><td>{row.nome_area}</td><td>{row.codice_centro_costo ?? "—"}</td><td>{row.codice_commessa}</td><td>{numberIt(row.ore)}</td><td>{numberIt(row.ore_pesate)}</td><td><span className={statusClass(row.stato)}>{row.stato}</span></td><td>{auth.canViewAmounts ? euro(row.importo_visibile ?? row.importo) : "Riservato"}</td><td><button type="button" className="button ghost" onClick={() => void deleteRow(row)}>Elimina</button></td></tr>)}</tbody>
+            </table>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-500">Anno:</span>
-            <input type="number" className="input w-24" value={year} onChange={e => setYear(Number(e.target.value))} />
-          </div>
-        </div>
-        <div className="relative w-full max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input 
-            type="text" 
-            placeholder="Cerca dipendente, commessa..." 
-            className="input pl-10"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-          />
-        </div>
+        )}
       </div>
-
-      {error && <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-100">{error}</div>}
-
-      <div className="panel overflow-hidden p-0">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Dipendente</th>
-                <th>Area</th>
-                <th>Commessa</th>
-                <th>Attività</th>
-                <th>Ore</th>
-                {canViewAmounts && <th>Importo</th>}
-                <th>Stato</th>
-                <th className="text-right">Azioni</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map(row => (
-                <tr key={row.id}>
-                  <td className="font-medium">{row.data}</td>
-                  <td>{row.employee_name}</td>
-                  <td><span className="pill pill-info">{row.codice_area}</span></td>
-                  <td>{row.codice_commessa}</td>
-                  <td>{row.codice_attivita}</td>
-                  <td className="font-bold">{numberIt(row.ore)}</td>
-                  {canViewAmounts && <td className="text-blue-600 font-medium">{euro(row.importo_visibile)}</td>}
-                  <td>
-                    <span className={cn(
-                      "pill",
-                      row.stato === 'Approvato' ? "pill-success" : 
-                      row.stato === 'Bozza' ? "pill-info" : "pill-warning"
-                    )}>
-                      {row.stato}
-                    </span>
-                  </td>
-                  <td className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500" onClick={() => setForm({
-                        id: row.id,
-                        data: row.data,
-                        employee_id: row.employee_id,
-                        beneficiary_company_id: row.beneficiary_company_id,
-                        location_id: row.location_id || "",
-                        business_area_id: row.business_area_id,
-                        project_id: row.project_id,
-                        activity_category_id: row.activity_category_id,
-                        cost_center_id: row.cost_center_id || "",
-                        ore: Number(row.ore),
-                        descrizione: row.descrizione || "",
-                        stato: row.stato,
-                        note: row.note || ""
-                      })}><Save size={14} /></button>
-                      <button className="p-1.5 hover:bg-red-50 rounded text-red-500" onClick={() => remove(row.id)}><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredRows.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400 italic">Nessuna riga trovata per questo periodo.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {form && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-xl font-bold">{form.id ? "Modifica Riga" : "Nuova Riga Timesheet"}</h3>
-              <button className="text-slate-400 hover:text-slate-600" onClick={() => setForm(null)}>×</button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Data</label>
-                  <input type="date" className="input" value={form.data} onChange={e => setForm({...form, data: e.target.value})} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Dipendente</label>
-                  <select className="input" value={form.employee_id} onChange={e => setForm({...form, employee_id: e.target.value})}>
-                    <option value="">Seleziona...</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.nome} {e.cognome}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Area Aziendale</label>
-                  <select className="input" value={form.business_area_id} onChange={e => setForm({...form, business_area_id: e.target.value, activity_category_id: "", cost_center_id: ""})}>
-                    <option value="">Seleziona...</option>
-                    {allowedAreas.map(a => <option key={a.id} value={a.id}>{a.codice_area} - {a.nome_area}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Società Beneficiaria</label>
-                  <select className="input" value={form.beneficiary_company_id} onChange={e => setForm({...form, beneficiary_company_id: e.target.value})}>
-                    <option value="">Seleziona...</option>
-                    {companies.map(c => <option key={c.id} value={c.id}>{c.codice_societa} - {c.ragione_sociale}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Commessa</label>
-                  <select className="input" value={form.project_id} onChange={e => setForm({...form, project_id: e.target.value})}>
-                    <option value="">Seleziona...</option>
-                    {projects.filter(p => !form.beneficiary_company_id || p.company_id === form.beneficiary_company_id).map(p => (
-                      <option key={p.id} value={p.id}>{p.codice_commessa} - {p.descrizione_commessa}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Attività</label>
-                  <select className="input" value={form.activity_category_id} onChange={e => setForm({...form, activity_category_id: e.target.value})}>
-                    <option value="">Seleziona...</option>
-                    {filteredActivities.map(a => <option key={a.id} value={a.id}>{a.codice_attivita} - {a.nome_categoria}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Centro di Costo</label>
-                  <select className="input" value={form.cost_center_id} onChange={e => setForm({...form, cost_center_id: e.target.value})}>
-                    <option value="">Seleziona...</option>
-                    {filteredCostCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.codice_centro_costo} - {cc.nome_centro_costo}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Ore</label>
-                  <input type="number" step="0.25" className="input" value={form.ore} onChange={e => setForm({...form, ore: Number(e.target.value)})} />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">Descrizione Lavoro</label>
-                <textarea className="input min-h-[80px]" value={form.descrizione} onChange={e => setForm({...form, descrizione: e.target.value})} placeholder="Dettaglio attività svolta..." />
-              </div>
-            </div>
-            <div className="p-6 border-t border-slate-100 flex justify-end gap-3">
-              <button className="button secondary" onClick={() => setForm(null)}>Annulla</button>
-              <button className="button primary" onClick={save}>Salva Riga</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }

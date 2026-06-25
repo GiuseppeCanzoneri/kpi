@@ -4,10 +4,11 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   return (
     <div className="page-header">
       <div>
-        <h2>{title}</h2>
-        {subtitle && <p>{subtitle}</p>}
+        <p className="eyebrow">Modulo KPI</p>
+        <h1>{title}</h1>
+        {subtitle ? <p>{subtitle}</p> : null}
       </div>
-      {actions && <div className="page-actions">{actions}</div>}
+      {actions ? <div className="page-actions">{actions}</div> : null}
     </div>
   );
 }

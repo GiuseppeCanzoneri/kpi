@@ -1,9 +1,11 @@
-export function KpiCard({ label, value, note }: { label: string; value: string | number; note?: string }) {
+import type { ReactNode } from "react";
+
+export function KpiCard({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
     <div className="kpi-card">
       <span>{label}</span>
       <strong>{value}</strong>
-      {note && <small>{note}</small>}
+      {hint ? <small>{hint}</small> : null}
     </div>
   );
 }

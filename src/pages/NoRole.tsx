@@ -1,18 +1,23 @@
 import { useAuth } from "../hooks/useAuth";
 
 export default function NoRole() {
-  const { user, signOut, refreshRoles } = useAuth();
+  const { user, refreshRoles, signOut } = useAuth();
+
   return (
-    <div className="center-page">
-      <div className="panel narrow">
-        <h2>Accesso non configurato</h2>
-        <p>L'utente <strong>{user?.email}</strong> non ha ancora un ruolo nel modulo KPI.</p>
-        <p>Inserisci questo utente in <strong>user_area_roles</strong> come SUPER_ADMIN oppure assegnalo a un'area come ADMIN_AREA / USER_AREA.</p>
-        <div className="toolbar">
-          <button className="button" onClick={refreshRoles}>Ricarica ruoli</button>
-          <button className="button secondary" onClick={signOut}>Esci</button>
+    <main className="auth-screen">
+      <section className="auth-card waiting-card">
+        <div className="brand-mark large">K</div>
+        <p className="eyebrow">Accesso in attesa</p>
+        <h1>Utente registrato, ruolo non ancora attivo</h1>
+        <p>
+          L'account <strong>{user?.email}</strong> è stato creato correttamente. Ora un SUPER_ADMIN deve assegnare il ruolo operativo.
+          Dopo l'assegnazione l'app aggiorna il profilo automaticamente; puoi anche forzare il controllo.
+        </p>
+        <div className="auth-actions">
+          <button className="button primary" type="button" onClick={() => void refreshRoles()}>Controlla abilitazione</button>
+          <button className="button secondary" type="button" onClick={() => void signOut()}>Esci</button>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

@@ -1,3 +1,3 @@
-export function Loading({ label = "Caricamento" }: { label?: string }) {
-  return <div className="loading">{label}...</div>;
+export function Loading() {
+  return <div className="loading-screen"><div className="loader" /><p>Caricamento dati KPI…</p></div>;
 }

@@ -2,7 +2,6 @@ export type KpiRole = "SUPER_ADMIN" | "ADMIN_AREA" | "USER_AREA";
 export type TimesheetStatus = "Bozza" | "Da correggere" | "Approvato" | "Fatturato";
 export type MovementType = "Interno non fatturabile" | "Infragruppo fatturabile";
 export type InvoiceStatus = "Non necessaria" | "Da emettere" | "Emessa" | "Pagata";
-
 export type Id = string;
 
 export interface Company {
@@ -44,6 +43,7 @@ export interface TariffProfile {
   codice_profilo: string;
   nome_profilo: string;
   descrizione: string | null;
+  business_area_id?: Id | null;
   costo_orario_base: number;
   overhead_percentuale: number;
   margine_percentuale: number;
