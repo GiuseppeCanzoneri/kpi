@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import type { IntercompanyInvoiceView, TimesheetView } from "../types/db";
 import { euro, numberIt } from "./format";
 
+// Estensione dei tipi per jspdf-autotable
 declare module "jspdf" {
   interface jsPDF {
     lastAutoTable?: { finalY?: number };
@@ -30,15 +31,21 @@ const nowIt = () => new Date().toLocaleString("it-IT");
 const value = (v: unknown, fallback = "—") => String(v ?? "").trim() || fallback;
 
 function addHeader(doc: jsPDF, title: string, subtitle: string) {
+  // Sfondo intestazione
   doc.setFillColor(18, 57, 99);
   doc.rect(0, 0, 297, 18, "F");
+  
+  // Testo intestazione
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
   doc.text(title, 12, 11);
+  
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.text(subtitle, 12, 16);
+  
+  // Reset colori per il resto del documento
   doc.setTextColor(20, 32, 51);
   doc.setFont("helvetica", "normal");
 }
@@ -49,10 +56,9 @@ function addFooter(doc: jsPDF) {
     doc.setPage(page);
     doc.setFontSize(7);
     doc.setTextColor(110, 122, 140);
-    doc.text(`Generato il ${nowIt()} · KPI / Contabilità ore infragruppo`, 12, 205);
-    doc.text(`Pagina ${page} di ${pageCount}`, 270, 205, { align: "right" });
+    doc.text(`Generato il ${nowIt()} · KPI / Contabilità ore infragruppo`, 12, 202);
+    doc.text(`Pagina ${page} di ${pageCount}`, 285, 202, { align: "right" });
   }
-  doc.setTextColor(20, 32, 51);
 }
 
 function addKpiRow(doc: jsPDF, items: { label: string; value: string }[], y = 24) {
@@ -63,10 +69,12 @@ function addKpiRow(doc: jsPDF, items: { label: string; value: string }[], y = 24
     doc.setDrawColor(215, 225, 236);
     doc.setFillColor(247, 250, 253);
     doc.roundedRect(x, y, width, 17, 2, 2, "FD");
+    
     doc.setFontSize(7);
     doc.setTextColor(110, 122, 140);
     doc.setFont("helvetica", "bold");
     doc.text(item.label.toUpperCase(), x + 3, y + 6);
+    
     doc.setTextColor(20, 32, 51);
     doc.setFontSize(11);
     doc.text(item.value, x + 3, y + 13);
@@ -94,7 +102,7 @@ function addTimesheetDetailTable(doc: jsPDF, rows: TimesheetView[], startY: numb
 
   autoTable(doc, {
     startY: startY + 4,
-    head: [["Data", "Dipendente", "Da", "A", "Area", "Commessa", "Attività", "Ore", "Importo", "Descrizione scritta dal dipendente"]],
+    head: [["Data", "Dipendente", "Da", "A", "Area", "Commessa", "Attività", "Ore", "Importo", "Descrizione lavoro svolto"]],
     body: rows.map((r) => [
       value(r.data),
       `${value(r.employee_name)}\n${value(r.employee_email, "")}`,
@@ -107,7 +115,7 @@ function addTimesheetDetailTable(doc: jsPDF, rows: TimesheetView[], startY: numb
       r.importo_visibile === null ? "Riservato" : euro(Number(r.importo_visibile ?? 0)),
       descriptionText(r),
     ]),
-    styles: { fontSize: 6.6, cellPadding: 1.5, overflow: "linebreak", valign: "top" },
+    styles: { fontSize: 6.5, cellPadding: 1.5, overflow: "linebreak", valign: "top" },
     headStyles: { fillColor: [18, 57, 99], textColor: [255, 255, 255], fontSize: 6.5 },
     alternateRowStyles: { fillColor: [247, 250, 253] },
     columnStyles: {
