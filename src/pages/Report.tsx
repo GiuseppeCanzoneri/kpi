@@ -6,7 +6,7 @@ import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
 import type { TimesheetView } from "../types/db";
 import { euro, numberIt } from "../lib/format";
-import { downloadTimesheetCsv, printTimesheetReport } from "../lib/reportPdf";
+import { downloadTimesheetCsv, generateTimesheetPdf } from "../lib/reportPdf";
 import { filterRowsByRole } from "../lib/kpiData";
 
 export default function Report() {
@@ -60,12 +60,12 @@ export default function Report() {
     <div>
       <PageHeader
         title="Report PDF"
-        description="Genera il report delle ore approvate. Il PDF ora usa la stampa del browser: nessuna libreria esterna rotta e nessun crash."
+        description="Genera un PDF reale con il dettaglio delle ore e le descrizioni inserite dai dipendenti."
         actions={
           <>
             <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
             <button className="button secondary" onClick={() => downloadTimesheetCsv(filteredRows, `report-ore-${month}-${year}.csv`)} disabled={filteredRows.length === 0}><Download size={16} /> CSV</button>
-            <button className="button" onClick={() => printTimesheetReport(filteredRows, { month, year })} disabled={filteredRows.length === 0}><FileText size={16} /> Genera PDF</button>
+            <button className="button" onClick={() => generateTimesheetPdf(filteredRows, { month, year }).save(`Report_ore_${year}_${String(month).padStart(2, "0")}.pdf`)} disabled={filteredRows.length === 0}><FileText size={16} /> Genera PDF</button>
           </>
         }
       />

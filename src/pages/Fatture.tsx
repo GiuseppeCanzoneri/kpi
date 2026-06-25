@@ -6,7 +6,7 @@ import { supabase } from "../integrations/supabase/client";
 import type { IntercompanyInvoiceView, InvoiceStatus, TimesheetView } from "../types/db";
 import { euro, numberIt } from "../lib/format";
 import { useAuth } from "../hooks/useAuth";
-import { printInvoicesReport } from "../lib/reportPdf";
+import { generateIntercompanyInvoicesPdf } from "../lib/reportPdf";
 
 const invoiceStatuses: InvoiceStatus[] = ["Non necessaria", "Da emettere", "Emessa", "Pagata"];
 
@@ -35,6 +35,7 @@ export default function Fatture() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,6 +144,31 @@ export default function Fatture() {
     else await load();
   };
 
+  const exportPdf = async () => {
+    setGeneratingPdf(true);
+    setError(null);
+
+    const { data, error } = await supabase
+      .from("v_timesheet_entries")
+      .select("*")
+      .eq("mese", month)
+      .eq("anno", year)
+      .eq("stato", "Approvato")
+      .order("data", { ascending: true })
+      .order("employee_name", { ascending: true });
+
+    setGeneratingPdf(false);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    const details = ((data ?? []) as TimesheetView[]).filter((row) => row.employer_company_id !== row.beneficiary_company_id && row.tipo_movimento === "Infragruppo fatturabile");
+    const doc = generateIntercompanyInvoicesPdf(invoices, details, { month, year });
+    doc.save(`Fatture_infragruppo_${year}_${String(month).padStart(2, "0")}.pdf`);
+  };
+
   return (
     <div>
       <PageHeader
@@ -152,7 +178,7 @@ export default function Fatture() {
           <>
             <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
             <button className="button" onClick={() => void generateInvoices()} disabled={!canManage || generating || eligibleFlows.length === 0}><FilePlus2 size={16} /> {generating ? "Genero..." : "Genera fatture"}</button>
-            <button className="button secondary" onClick={() => printInvoicesReport(invoices, { month, year })} disabled={invoices.length === 0}><FileText size={16} /> PDF</button>
+            <button className="button secondary" onClick={() => void exportPdf()} disabled={invoices.length === 0 || generatingPdf}><FileText size={16} /> {generatingPdf ? "Genero..." : "PDF completo"}</button>
           </>
         }
       />

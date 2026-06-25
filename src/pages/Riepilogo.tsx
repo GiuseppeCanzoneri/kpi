@@ -3,9 +3,9 @@ import { AlertTriangle, FileText, RefreshCw } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { supabase } from "../integrations/supabase/client";
-import type { MonthlySummaryLive } from "../types/db";
+import type { MonthlySummaryLive, TimesheetView } from "../types/db";
 import { euro, numberIt } from "../lib/format";
-import { printMonthlySummaryReport } from "../lib/reportPdf";
+import { generateMonthlySummaryPdf } from "../lib/reportPdf";
 
 type AggregateRow = {
   key: string;
@@ -32,6 +32,7 @@ export default function Riepilogo() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshingDb, setRefreshingDb] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +105,31 @@ export default function Riepilogo() {
     else await load();
   };
 
+  const exportPdf = async () => {
+    setGeneratingPdf(true);
+    setError(null);
+
+    const { data, error } = await supabase
+      .from("v_timesheet_entries")
+      .select("*")
+      .eq("mese", month)
+      .eq("anno", year)
+      .eq("stato", "Approvato")
+      .order("data", { ascending: true })
+      .order("employee_name", { ascending: true });
+
+    setGeneratingPdf(false);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    const details = (data ?? []) as TimesheetView[];
+    const doc = generateMonthlySummaryPdf(summary, details, { month, year });
+    doc.save(`Riepilogo_mese_${year}_${String(month).padStart(2, "0")}.pdf`);
+  };
+
   return (
     <div>
       <PageHeader
@@ -113,7 +139,7 @@ export default function Riepilogo() {
           <>
             <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
             <button className="button secondary" onClick={() => void refreshDb()} disabled={refreshingDb}><RefreshCw size={16} /> {refreshingDb ? "Rigenero..." : "Rigenera DB"}</button>
-            <button className="button" onClick={() => printMonthlySummaryReport(summary, { month, year })} disabled={summary.length === 0}><FileText size={16} /> PDF</button>
+            <button className="button" onClick={() => void exportPdf()} disabled={summary.length === 0 || generatingPdf}><FileText size={16} /> {generatingPdf ? "Genero..." : "PDF completo"}</button>
           </>
         }
       />
