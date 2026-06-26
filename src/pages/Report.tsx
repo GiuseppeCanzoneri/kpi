@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, FileText, RefreshCw, Loader2, User } from "lucide-react";
+import { AlertTriangle, Download, FileText, RefreshCw, Loader2 } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { supabase } from "../integrations/supabase/client";
