@@ -32,11 +32,22 @@ export default function Accessi() {
   const auth = useAuth();
   const [lookup, setLookup] = useState<LookupData | null>(null);
   const [rows, setRows] = useState<UserAreaRole[]>([]);
-  const [form, setForm] = useState<RoleForm>(emptyForm);
+  
+  // Caricamento bozza iniziale
+  const [form, setForm] = useState<RoleForm>(() => {
+    const saved = localStorage.getItem("kpi_accessi_draft");
+    return saved ? JSON.parse(saved) : emptyForm;
+  });
+
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]off = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Salvataggio bozza ad ogni modifica
+  useEffect(() => {
+    localStorage.setItem("kpi_accessi_draft", JSON.stringify(form));
+  }, [form]);
 
   const canCreateAdvancedRoles = auth.isSuperAdmin;
   const availableRoles: KpiRole[] = canCreateAdvancedRoles
@@ -118,24 +129,8 @@ export default function Accessi() {
       return;
     }
 
-    if (!auth.isSuperAdmin && form.role !== "USER_AREA") {
-      setError("L'ADMIN_AREA può creare solo USER_AREA.");
-      return;
-    }
-
-    if (form.role !== "SUPER_ADMIN" && !form.business_area_id) {
-      setError("Seleziona un'area per USER_AREA o ADMIN_AREA.");
-      return;
-    }
-
-    if (!auth.isSuperAdmin && !auth.areaIds.includes(form.business_area_id)) {
-      setError("Puoi assegnare utenti solo alle tue aree.");
-      return;
-    }
-
     setSaving(true);
 
-    // Utilizzo del nome della funzione: il client Supabase gestisce l'URL di base
     const { data, error } = await supabase.functions.invoke("create-kpi-user", {
       body: {
         email,
@@ -161,6 +156,7 @@ export default function Accessi() {
     }
 
     setForm(emptyForm);
+    localStorage.removeItem("kpi_accessi_draft");
     setMessage(data?.message ?? "Utente creato e ruolo assegnato.");
     await load();
     await auth.refreshRoles();
@@ -188,7 +184,7 @@ export default function Accessi() {
     <div>
       <PageHeader
         title="Accessi e ruoli"
-        description="Crea l'utente con password e assegna subito il ruolo KPI. La registrazione pubblica dal login resta disattivata."
+        description="Crea l'utente con password e assegna subito il ruolo KPI."
         actions={
           <button className="button secondary" onClick={() => void load()} disabled={loading}>
             <RefreshCw size={16} /> Aggiorna
@@ -197,172 +193,36 @@ export default function Accessi() {
       />
 
       <div className="kpi-grid small">
-        <div className="kpi-card">
-          <span>Utenti configurati</span>
-          <strong>{rows.length}</strong>
-          <small>Ruoli attivi e disattivi</small>
-        </div>
-        <div className="kpi-card">
-          <span>Area corrente</span>
-          <strong>{auth.isSuperAdmin ? "Tutte" : auth.areaIds.length}</strong>
-          <small>Ambito di gestione</small>
-        </div>
-        <div className="kpi-card">
-          <span>Sicurezza</span>
-          <strong>Password</strong>
-          <small>Creata da admin</small>
-        </div>
+        <div className="kpi-card"><span>Utenti configurati</span><strong>{rows.length}</strong><small>Ruoli attivi e disattivi</small></div>
+        <div className="kpi-card"><span>Area corrente</span><strong>{auth.isSuperAdmin ? "Tutte" : auth.areaIds.length}</strong><small>Ambito di gestione</small></div>
+        <div className="kpi-card"><span>Sicurezza</span><strong>Password</strong><small>Creata da admin</small></div>
       </div>
 
-      {error && (
-        <div className="alert error">
-          <AlertTriangle size={16} /> {error}
-        </div>
-      )}
-
-      {message && (
-        <div className="alert success">
-          <CheckCircle2 size={16} /> {message}
-        </div>
-      )}
+      {error && <div className="alert error"><AlertTriangle size={16} /> {error}</div>}
+      {message && <div className="alert success"><CheckCircle2 size={16} /> {message}</div>}
 
       <div className="split-grid access-grid">
         <form className="panel access-form" onSubmit={save}>
-          <div className="panel-title">
-            <UserPlus size={18} />
-            <div>
-              <h3>Nuova utenza</h3>
-              <p>Email, password e ruolo operativo.</p>
-            </div>
-          </div>
-
+          <div className="panel-title"><UserPlus size={18} /><div><h3>Nuova utenza</h3><p>Email, password e ruolo operativo.</p></div></div>
           <div className="form-grid refined">
-            <label>
-              Email utente *
-              <input
-                className="input"
-                type="email"
-                value={form.email}
-                onChange={(event) => update("email", event.target.value)}
-                placeholder="utente@azienda.it"
-                autoComplete="off"
-              />
-            </label>
-
-            <label>
-              Ruolo *
-              <select className="input" value={form.role} onChange={(event) => update("role", event.target.value as KpiRole)}>
-                {availableRoles.map((role) => (
-                  <option key={role} value={role}>{role}</option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Password *
-              <input
-                className="input"
-                type="password"
-                value={form.password}
-                onChange={(event) => update("password", event.target.value)}
-                placeholder="Minimo 6 caratteri"
-                autoComplete="new-password"
-              />
-            </label>
-
-            <label>
-              Conferma password *
-              <input
-                className="input"
-                type="password"
-                value={form.confirmPassword}
-                onChange={(event) => update("confirmPassword", event.target.value)}
-                placeholder="Ripeti password"
-                autoComplete="new-password"
-              />
-            </label>
-
-            <label>
-              Società
-              <select className="input" value={form.company_id} onChange={(event) => update("company_id", event.target.value)}>
-                <option value="">Tutte / non specificata</option>
-                {lookup?.companies.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.codice_societa} · {item.ragione_sociale}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Sede
-              <select className="input" value={form.location_id} onChange={(event) => update("location_id", event.target.value)}>
-                <option value="">Tutte / non specificata</option>
-                {lookup?.locations.map((item) => (
-                  <option key={item.id} value={item.id}>{item.nome_sede}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className={form.role === "SUPER_ADMIN" ? "muted-field" : ""}>
-              Area {form.role !== "SUPER_ADMIN" ? "*" : ""}
-              <select
-                className="input"
-                value={form.business_area_id}
-                onChange={(event) => update("business_area_id", event.target.value)}
-                disabled={form.role === "SUPER_ADMIN"}
-              >
-                <option value="">Seleziona area</option>
-                {lookup?.areas.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.codice_area} · {item.nome_area}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={form.role === "ADMIN_AREA" || form.role === "SUPER_ADMIN" || form.can_view_amounts}
-                disabled={form.role === "ADMIN_AREA" || form.role === "SUPER_ADMIN"}
-                onChange={(event) => update("can_view_amounts", event.target.checked)}
-              />
-              Può vedere importi
-            </label>
+            <label>Email utente *<input className="input" type="email" value={form.email} onChange={(event) => update("email", event.target.value)} placeholder="utente@azienda.it" autoComplete="off" /></label>
+            <label>Ruolo *<select className="input" value={form.role} onChange={(event) => update("role", event.target.value as KpiRole)}>{availableRoles.map((role) => (<option key={role} value={role}>{role}</option>))}</select></label>
+            <label>Password *<input className="input" type="password" value={form.password} onChange={(event) => update("password", event.target.value)} placeholder="Minimo 6 caratteri" autoComplete="new-password" /></label>
+            <label>Conferma password *<input className="input" type="password" value={form.confirmPassword} onChange={(event) => update("confirmPassword", event.target.value)} placeholder="Ripeti password" autoComplete="new-password" /></label>
+            <label>Società<select className="input" value={form.company_id} onChange={(event) => update("company_id", event.target.value)}><option value="">Tutte / non specificata</option>{lookup?.companies.map((item) => (<option key={item.id} value={item.id}>{item.codice_societa} · {item.ragione_sociale}</option>))}</select></label>
+            <label>Sede<select className="input" value={form.location_id} onChange={(event) => update("location_id", event.target.value)}><option value="">Tutte / non specificata</option>{lookup?.locations.map((item) => (<option key={item.id} value={item.id}>{item.nome_sede}</option>))}</select></label>
+            <label className={form.role === "SUPER_ADMIN" ? "muted-field" : ""}>Area {form.role !== "SUPER_ADMIN" ? "*" : ""}<select className="input" value={form.business_area_id} onChange={(event) => update("business_area_id", event.target.value)} disabled={form.role === "SUPER_ADMIN"}><option value="">Seleziona area</option>{lookup?.areas.map((item) => (<option key={item.id} value={item.id}>{item.codice_area} · {item.nome_area}</option>))}</select></label>
+            <label className="checkbox-row"><input type="checkbox" checked={form.role === "ADMIN_AREA" || form.role === "SUPER_ADMIN" || form.can_view_amounts} disabled={form.role === "ADMIN_AREA" || form.role === "SUPER_ADMIN"} onChange={(event) => update("can_view_amounts", event.target.checked)} /> Può vedere importi</label>
           </div>
-
-          <div className="hint-box">
-            <KeyRound size={16} />
-            L'utente potrà accedere subito dal login con la password impostata qui.
-          </div>
-
-          <button className="button full" disabled={saving}>
-            <Save size={16} /> {saving ? "Creo utenza..." : "Crea utente e assegna ruolo"}
-          </button>
+          <div className="hint-box"><KeyRound size={16} /> L'utente potrà accedere subito dal login con la password impostata qui.</div>
+          <button className="button full" disabled={saving}><Save size={16} /> {saving ? "Creo utenza..." : "Crea utente e assegna ruolo"}</button>
         </form>
 
         <div className="panel">
-          <div className="panel-title">
-            <ShieldCheck size={18} />
-            <div>
-              <h3>Ruoli assegnati</h3>
-              <p>{rows.length} assegnazioni presenti.</p>
-            </div>
-          </div>
-
+          <div className="panel-title"><ShieldCheck size={18} /><div><h3>Ruoli assegnati</h3><p>{rows.length} assegnazioni presenti.</p></div></div>
           <div className="table-wrap">
             <table className="data-table compact">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Ruolo</th>
-                  <th>Area</th>
-                  <th>Importi</th>
-                  <th>Stato</th>
-                  <th>Azioni</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Email</th><th>Ruolo</th><th>Area</th><th>Importi</th><th>Stato</th><th>Azioni</th></tr></thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id}>
@@ -371,18 +231,10 @@ export default function Accessi() {
                     <td>{row.business_area_id ? areaNameById.get(row.business_area_id) ?? row.business_area_id : "Tutte"}</td>
                     <td>{row.can_view_amounts ? "Sì" : "No"}</td>
                     <td>{row.active ? "Attivo" : "Disattivo"}</td>
-                    <td>
-                      <button className="button secondary small" type="button" onClick={() => void toggleActive(row)}>
-                        {row.active ? "Disattiva" : "Attiva"}
-                      </button>
-                    </td>
+                    <td><button className="button secondary small" type="button" onClick={() => void toggleActive(row)}>{row.active ? "Disattiva" : "Attiva"}</button></td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="muted">Nessun ruolo configurato.</td>
-                  </tr>
-                )}
+                {rows.length === 0 && (<tr><td colSpan={6} className="muted">Nessun ruolo configurato.</td></tr>)}
               </tbody>
             </table>
           </div>
