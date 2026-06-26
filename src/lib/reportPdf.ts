@@ -124,11 +124,14 @@ function addTimesheetTable(doc: jsPDF, rows: TimesheetView[], startY: number, ti
 }
 
 // Esportazioni richieste dalle varie pagine
-export function generateTimesheetPdf(rows: TimesheetView[], filters: { month: number; year: number }) {
+export function generateTimesheetPdf(rows: TimesheetView[], filters: { month: number; year: number; title?: string }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const totalOre = rows.reduce((s, r) => s + Number(r.ore || 0), 0);
   const totalImporto = rows.reduce((s, r) => s + Number(r.importo_visibile || 0), 0);
-  addHeader(doc, "Report Dettaglio Ore", `Periodo: ${filters.month}/${filters.year}`);
+  
+  const pdfTitle = filters.title || "Report Dettaglio Ore";
+  addHeader(doc, pdfTitle, `Periodo: ${filters.month}/${filters.year}`);
+  
   const nextY = addKpiSummary(doc, [
     { label: "Righe Totali", value: String(rows.length) },
     { label: "Ore Totali", value: numberIt(totalOre) },
