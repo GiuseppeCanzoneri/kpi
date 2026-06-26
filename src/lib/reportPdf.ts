@@ -1,9 +1,9 @@
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { IntercompanyInvoiceView, TimesheetView } from "../types/db";
 import { euro, numberIt } from "./format";
 
-// Estensione dei tipi per jspdf-autotable
+// Estensione dei tipi per TypeScript
 declare module "jspdf" {
   interface jsPDF {
     lastAutoTable?: { finalY?: number };
@@ -31,272 +31,271 @@ const nowIt = () => new Date().toLocaleString("it-IT");
 const value = (v: unknown, fallback = "—") => String(v ?? "").trim() || fallback;
 
 function addHeader(doc: jsPDF, title: string, subtitle: string) {
-  // Sfondo intestazione
+  const pageWidth = doc.internal.pageSize.getWidth();
+  
+  // Sfondo intestazione blu scuro
   doc.setFillColor(18, 57, 99);
-  doc.rect(0, 0, 297, 18, "F");
+  doc.rect(0, 0, pageWidth, 20, "F");
   
-  // Testo intestazione
+  // Testo intestazione bianco
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
+  doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.text(title, 12, 11);
+  doc.text(title, 12, 12);
   
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.text(subtitle, 12, 16);
+  doc.text(subtitle, 12, 17);
   
-  // Reset colori per il resto del documento
+  // Reset colori
   doc.setTextColor(20, 32, 51);
-  doc.setFont("helvetica", "normal");
 }
 
 function addFooter(doc: jsPDF) {
   const pageCount = doc.getNumberOfPages();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page);
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setTextColor(110, 122, 140);
-    doc.text(`Generato il ${nowIt()} · KPI / Contabilità ore infragruppo`, 12, 202);
-    doc.text(`Pagina ${page} di ${pageCount}`, 285, 202, { align: "right" });
+    doc.text(`Generato il ${nowIt()} · KPI / Contabilità ore infragruppo`, 12, pageHeight - 10);
+    doc.text(`Pagina ${page} di ${pageCount}`, pageWidth - 12, pageHeight - 10, { align: "right" });
   }
 }
 
-function addKpiRow(doc: jsPDF, items: { label: string; value: string }[], y = 24) {
-  const width = 64;
-  const gap = 4;
-  items.slice(0, 4).forEach((item, index) => {
+function addKpiSummary(doc: jsPDF, items: { label: string; value: string }[], y = 28) {
+  const width = 65;
+  const gap = 5;
+  
+  items.forEach((item, index) => {
     const x = 12 + index * (width + gap);
+    
+    // Box
     doc.setDrawColor(215, 225, 236);
     doc.setFillColor(247, 250, 253);
-    doc.roundedRect(x, y, width, 17, 2, 2, "FD");
+    doc.roundedRect(x, y, width, 18, 2, 2, "FD");
     
+    // Label
     doc.setFontSize(7);
     doc.setTextColor(110, 122, 140);
     doc.setFont("helvetica", "bold");
-    doc.text(item.label.toUpperCase(), x + 3, y + 6);
+    doc.text(item.label.toUpperCase(), x + 4, y + 6);
     
-    doc.setTextColor(20, 32, 51);
-    doc.setFontSize(11);
-    doc.text(item.value, x + 3, y + 13);
+    // Value
+    doc.setTextColor(18, 57, 99);
+    doc.setFontSize(12);
+    doc.text(item.value, x + 4, y + 14);
   });
+  
   doc.setFont("helvetica", "normal");
+  return y + 25;
 }
 
-function descriptionText(row: TimesheetView) {
-  const parts = [
-    row.descrizione ? `Descrizione: ${row.descrizione}` : "Descrizione: —",
-    row.note ? `Note: ${row.note}` : null,
-    row.is_contested ? `Contestazione: ${row.contest_reason ?? "da verificare"}` : null,
-    row.correction_note ? `Correzione: ${row.correction_note}` : null,
-  ].filter(Boolean);
-  return parts.join("\n");
-}
-
-function addTimesheetDetailTable(doc: jsPDF, rows: TimesheetView[], startY: number, title = "Dettaglio ore e descrizioni dipendenti") {
+function addTimesheetTable(doc: jsPDF, rows: TimesheetView[], startY: number, title: string) {
   if (rows.length === 0) return startY;
 
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
+  doc.setTextColor(18, 57, 99);
   doc.text(title, 12, startY);
-  doc.setFont("helvetica", "normal");
-
+  
   autoTable(doc, {
-    startY: startY + 4,
-    head: [["Data", "Dipendente", "Da", "A", "Area", "Commessa", "Attività", "Ore", "Importo", "Descrizione lavoro svolto"]],
+    startY: startY + 5,
+    head: [["Data", "Dipendente", "Da", "A", "Area", "Commessa", "Attività", "Ore", "Importo", "Descrizione"]],
     body: rows.map((r) => [
-      value(r.data),
-      `${value(r.employee_name)}\n${value(r.employee_email, "")}`,
-      value(r.employer_company_code),
-      value(r.beneficiary_company_code),
-      value(r.codice_area),
-      `${value(r.codice_commessa)}\n${value(r.descrizione_commessa, "")}`,
-      `${value(r.codice_attivita)}\n${value(r.nome_categoria, "")}`,
+      r.data,
+      `${r.employee_name}\n${r.employee_email}`,
+      r.employer_company_code || "—",
+      r.beneficiary_company_code || "—",
+      r.codice_area || "—",
+      `${r.codice_commessa}\n${r.descrizione_commessa || ""}`,
+      `${r.codice_attivita}\n${r.nome_categoria || ""}`,
       numberIt(r.ore),
-      r.importo_visibile === null ? "Riservato" : euro(Number(r.importo_visibile ?? 0)),
-      descriptionText(r),
+      r.importo_visibile === null ? "Riservato" : euro(r.importo_visibile),
+      [
+        r.descrizione || "—",
+        r.note ? `Note: ${r.note}` : null,
+        r.is_contested ? `CONTESTATA: ${r.contest_reason || "da verificare"}` : null
+      ].filter(Boolean).join("\n")
     ]),
-    styles: { fontSize: 6.5, cellPadding: 1.5, overflow: "linebreak", valign: "top" },
-    headStyles: { fillColor: [18, 57, 99], textColor: [255, 255, 255], fontSize: 6.5 },
-    alternateRowStyles: { fillColor: [247, 250, 253] },
+    styles: { fontSize: 7, cellPadding: 2, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: [18, 57, 99], textColor: [255, 255, 255], fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [245, 248, 251] },
     columnStyles: {
-      0: { cellWidth: 17 },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 16 },
-      3: { cellWidth: 16 },
-      4: { cellWidth: 13 },
-      5: { cellWidth: 32 },
-      6: { cellWidth: 32 },
-      7: { cellWidth: 10, halign: "right" },
-      8: { cellWidth: 18, halign: "right" },
-      9: { cellWidth: 85 },
+      0: { cellWidth: 18 },
+      1: { cellWidth: 30 },
+      2: { cellWidth: 15 },
+      3: { cellWidth: 15 },
+      4: { cellWidth: 15 },
+      5: { cellWidth: 35 },
+      6: { cellWidth: 35 },
+      7: { cellWidth: 12, halign: "right" },
+      8: { cellWidth: 20, halign: "right" },
+      9: { cellWidth: "auto" }
     },
     margin: { left: 12, right: 12 },
     didParseCell: (data) => {
       const row = rows[data.row.index];
       if (data.section === "body" && row?.is_contested) {
-        data.cell.styles.fillColor = [255, 248, 232];
+        data.cell.styles.fillColor = [255, 245, 230];
+        data.cell.styles.textColor = [180, 35, 24];
       }
-    },
+    }
   });
 
-  return (doc.lastAutoTable?.finalY ?? startY) + 8;
+  return (doc.lastAutoTable?.finalY || startY) + 15;
 }
 
-export function generateTimesheetPdf(rows: TimesheetView[], filters: { month: number; year: number; title?: string }) {
+export function generateTimesheetPdf(rows: TimesheetView[], filters: { month: number; year: number }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const title = filters.title ?? "Report ore registrate";
-  const totaleOre = rows.reduce((acc, r) => acc + Number(r.ore ?? 0), 0);
-  const totaleOrePesate = rows.reduce((acc, r) => acc + Number(r.ore_pesate ?? 0), 0);
-  const totaleImporto = rows.reduce((acc, r) => acc + Number(r.importo_visibile ?? 0), 0);
-  const contestate = rows.filter((r) => r.is_contested).length;
-
-  addHeader(doc, title, `Competenza ${filters.month}/${filters.year}`);
-  addKpiRow(doc, [
-    { label: "Righe", value: String(rows.length) },
-    { label: "Ore", value: numberIt(totaleOre) },
-    { label: "Ore pesate", value: numberIt(totaleOrePesate) },
-    { label: "Importo", value: euro(totaleImporto) },
+  
+  const totalOre = rows.reduce((s, r) => s + Number(r.ore || 0), 0);
+  const totalImporto = rows.reduce((s, r) => s + Number(r.importo_visibile || 0), 0);
+  
+  addHeader(doc, "Report Dettaglio Ore", `Periodo: ${filters.month}/${filters.year}`);
+  
+  const nextY = addKpiSummary(doc, [
+    { label: "Righe Totali", value: String(rows.length) },
+    { label: "Ore Totali", value: numberIt(totalOre) },
+    { label: "Valore Economico", value: euro(totalImporto) }
   ]);
-
-  if (contestate) {
-    doc.setFontSize(8);
-    doc.setTextColor(180, 35, 24);
-    doc.text(`${contestate} righe contestate incluse nel report.`, 12, 47);
-    doc.setTextColor(20, 32, 51);
-  }
-
-  addTimesheetDetailTable(doc, rows, 54);
+  
+  addTimesheetTable(doc, rows, nextY, "Elenco prestazioni registrate");
+  
   addFooter(doc);
   return doc;
 }
 
 export function generateMonthlySummaryPdf(summaryRows: MonthlyPdfRow[], detailRows: TimesheetView[], filters: { month: number; year: number }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  
   const totals = summaryRows.reduce((acc, r) => ({
     ore: acc.ore + r.ore,
-    orePesate: acc.orePesate + r.orePesate,
     imponibile: acc.imponibile + r.imponibile,
-    iva: acc.iva + r.iva,
-    totale: acc.totale + r.totale,
-  }), { ore: 0, orePesate: 0, imponibile: 0, iva: 0, totale: 0 });
+    totale: acc.totale + r.totale
+  }), { ore: 0, imponibile: 0, totale: 0 });
 
-  addHeader(doc, "Riepilogo mese", `Competenza ${filters.month}/${filters.year}`);
-  addKpiRow(doc, [
-    { label: "Flussi", value: String(summaryRows.length) },
-    { label: "Ore", value: numberIt(totals.ore) },
-    { label: "Imponibile", value: euro(totals.imponibile) },
-    { label: "Totale lordo", value: euro(totals.totale) },
+  addHeader(doc, "Riepilogo Mensile Consolidato", `Competenza: ${filters.month}/${filters.year}`);
+  
+  let nextY = addKpiSummary(doc, [
+    { label: "Flussi Infragruppo", value: String(summaryRows.length) },
+    { label: "Ore Approvate", value: numberIt(totals.ore) },
+    { label: "Imponibile Totale", value: euro(totals.imponibile) },
+    { label: "Totale Lordo", value: euro(totals.totale) }
   ]);
 
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(18, 57, 99);
+  doc.text("Sintesi per Società e Area", 12, nextY);
+
   autoTable(doc, {
-    startY: 48,
-    head: [["Da società", "A società", "Area", "Righe", "Ore", "Ore pesate", "Imponibile", "IVA", "Totale", "Note"]],
+    startY: nextY + 5,
+    head: [["Da Società", "A Società", "Area", "Righe", "Ore", "Ore Pesate", "Imponibile", "IVA", "Totale", "Stato"]],
     body: summaryRows.map((r) => [
-      r.da,
-      r.a,
-      r.area,
-      String(r.righe),
-      numberIt(r.ore),
-      numberIt(r.orePesate),
-      euro(r.imponibile),
-      euro(r.iva),
-      euro(r.totale),
-      r.contestazioni ? "Contiene contestazioni" : "OK",
+      r.da, r.a, r.area, String(r.righe),
+      numberIt(r.ore), numberIt(r.orePesate),
+      euro(r.imponibile), euro(r.iva), euro(r.totale),
+      r.contestazioni ? "CONTESTAZIONI" : "OK"
     ]),
-    styles: { fontSize: 7, cellPadding: 1.5, overflow: "linebreak" },
+    styles: { fontSize: 8, cellPadding: 2.5 },
     headStyles: { fillColor: [18, 57, 99], textColor: [255, 255, 255] },
-    alternateRowStyles: { fillColor: [247, 250, 253] },
-    margin: { left: 12, right: 12 },
+    alternateRowStyles: { fillColor: [245, 248, 251] },
+    margin: { left: 12, right: 12 }
   });
 
-  let y = (doc.lastAutoTable?.finalY ?? 80) + 10;
-  if (y > 165) {
+  nextY = (doc.lastAutoTable?.finalY || nextY) + 15;
+  
+  if (nextY > 160) {
     doc.addPage();
-    y = 24;
+    nextY = 25;
   }
-  addTimesheetDetailTable(doc, detailRows, y, "Dettaglio ore: descrizioni inserite dai dipendenti");
+  
+  addTimesheetTable(doc, detailRows, nextY, "Dettaglio analitico delle prestazioni");
+  
   addFooter(doc);
   return doc;
 }
 
 export function generateIntercompanyInvoicesPdf(invoices: IntercompanyInvoiceView[], detailRows: TimesheetView[], filters: { month: number; year: number }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  
   const totals = invoices.reduce((acc, r) => ({
-    imponibile: acc.imponibile + Number(r.imponibile ?? 0),
-    iva: acc.iva + Number(r.iva ?? 0),
-    totale: acc.totale + Number(r.totale ?? 0),
-  }), { imponibile: 0, iva: 0, totale: 0 });
+    imponibile: acc.imponibile + Number(r.imponibile || 0),
+    totale: acc.totale + Number(r.totale || 0)
+  }), { imponibile: 0, totale: 0 });
 
-  addHeader(doc, "Fatture infragruppo", `Competenza ${filters.month}/${filters.year}`);
-  addKpiRow(doc, [
-    { label: "Prospetti", value: String(invoices.length) },
-    { label: "Imponibile", value: euro(totals.imponibile) },
-    { label: "IVA", value: euro(totals.iva) },
-    { label: "Totale", value: euro(totals.totale) },
+  addHeader(doc, "Prospetti Fatturazione Infragruppo", `Competenza: ${filters.month}/${filters.year}`);
+  
+  let nextY = addKpiSummary(doc, [
+    { label: "Prospetti Generati", value: String(invoices.length) },
+    { label: "Imponibile Totale", value: euro(totals.imponibile) },
+    { label: "Totale Lordo", value: euro(totals.totale) }
   ]);
 
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(18, 57, 99);
+  doc.text("Elenco Prospetti Fattura", 12, nextY);
+
   autoTable(doc, {
-    startY: 48,
-    head: [["Emittente", "Destinataria", "Competenza", "Imponibile", "IVA", "Totale", "Numero", "Data", "Stato", "Note"]],
+    startY: nextY + 5,
+    head: [["Emittente", "Destinataria", "Mese", "Imponibile", "IVA", "Totale", "Stato", "Note"]],
     body: invoices.map((r) => [
-      value(r.employer_company_code ?? r.employer_company_name),
-      value(r.beneficiary_company_code ?? r.beneficiary_company_name),
+      r.employer_company_code || r.employer_company_name || "—",
+      r.beneficiary_company_code || r.beneficiary_company_name || "—",
       `${r.mese}/${r.anno}`,
-      euro(Number(r.imponibile ?? 0)),
-      euro(Number(r.iva ?? 0)),
-      euro(Number(r.totale ?? 0)),
-      value(r.numero_fattura),
-      value(r.data_fattura),
-      value(r.stato),
-      value(r.note, ""),
+      euro(Number(r.imponibile || 0)),
+      euro(Number(r.iva || 0)),
+      euro(Number(r.totale || 0)),
+      r.stato,
+      r.note || ""
     ]),
-    styles: { fontSize: 7, cellPadding: 1.5, overflow: "linebreak" },
+    styles: { fontSize: 8, cellPadding: 2.5 },
     headStyles: { fillColor: [18, 57, 99], textColor: [255, 255, 255] },
-    alternateRowStyles: { fillColor: [247, 250, 253] },
-    margin: { left: 12, right: 12 },
+    margin: { left: 12, right: 12 }
   });
 
-  let y = (doc.lastAutoTable?.finalY ?? 80) + 10;
-  const details = detailRows.filter((r) => r.employer_company_id !== r.beneficiary_company_id && r.tipo_movimento === "Infragruppo fatturabile");
-  if (y > 165) {
+  nextY = (doc.lastAutoTable?.finalY || nextY) + 15;
+  
+  if (nextY > 160) {
     doc.addPage();
-    y = 24;
+    nextY = 25;
   }
-  addTimesheetDetailTable(doc, details, y, "Dettaglio ore incluse nelle fatture: descrizioni dipendenti");
+  
+  const intercompanyDetails = detailRows.filter(r => r.employer_company_id !== r.beneficiary_company_id);
+  addTimesheetTable(doc, intercompanyDetails, nextY, "Dettaglio prestazioni incluse nei prospetti");
+  
   addFooter(doc);
   return doc;
 }
 
 export function downloadTimesheetCsv(rows: TimesheetView[], filename: string) {
-  const header = ["Data", "Dipendente", "Email", "Da societa", "A societa", "Area", "Commessa", "Attivita", "Ore", "Ore pesate", "Importo", "Contestata", "Descrizione", "Note"];
-  const lines = rows.map((r) => [
-    r.data,
-    r.employee_name,
-    r.employee_email,
-    r.employer_company_code,
-    r.beneficiary_company_code,
-    r.codice_area,
-    r.codice_commessa,
-    r.codice_attivita,
-    numberIt(r.ore),
-    numberIt(r.ore_pesate),
-    r.importo_visibile === null ? "Riservato" : String(r.importo_visibile),
-    r.is_contested ? "SI" : "NO",
-    r.descrizione ?? "",
-    r.note ?? "",
-  ]);
-  const csv = [header, ...lines].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(";")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+  const header = ["Data", "Dipendente", "Email", "Da Societa", "A Societa", "Area", "Commessa", "Attivita", "Ore", "Importo", "Descrizione"];
+  const csvContent = [
+    header.join(";"),
+    ...rows.map(r => [
+      r.data,
+      r.employee_name,
+      r.employee_email,
+      r.employer_company_code,
+      r.beneficiary_company_code,
+      r.codice_area,
+      r.codice_commessa,
+      r.codice_attivita,
+      String(r.ore).replace(".", ","),
+      String(r.importo_visibile || 0).replace(".", ","),
+      (r.descrizione || "").replace(/;/g, ",")
+    ].join(";"))
+  ].join("\n");
 
-export function savePdf(doc: jsPDF, filename: string) {
-  doc.save(filename);
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, FileText, RefreshCw } from "lucide-react";
+import { AlertTriangle, Download, FileText, RefreshCw, Loader2 } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { supabase } from "../integrations/supabase/client";
@@ -8,6 +8,7 @@ import type { TimesheetView } from "../types/db";
 import { euro, numberIt } from "../lib/format";
 import { downloadTimesheetCsv, generateTimesheetPdf } from "../lib/reportPdf";
 import { filterRowsByRole } from "../lib/kpiData";
+import { toast } from "sonner";
 
 export default function Report() {
   const { isSuperAdmin, isAdminArea, areaIds, user } = useAuth();
@@ -17,6 +18,7 @@ export default function Report() {
   const [rows, setRows] = useState<TimesheetView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const [onlyIntercompany, setOnlyIntercompany] = useState(false);
   const [includeContested, setIncludeContested] = useState(true);
 
@@ -49,6 +51,22 @@ export default function Report() {
     return true;
   }), [includeContested, onlyIntercompany, rows]);
 
+  const handleGeneratePdf = async () => {
+    if (filteredRows.length === 0) return;
+    
+    setGeneratingPdf(true);
+    try {
+      const doc = generateTimesheetPdf(filteredRows, { month, year });
+      doc.save(`Report_Ore_${year}_${String(month).padStart(2, "0")}.pdf`);
+      toast.success("PDF generato con successo");
+    } catch (err) {
+      console.error("Errore generazione PDF:", err);
+      toast.error("Errore durante la creazione del file PDF");
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   const totals = useMemo(() => ({
     ore: filteredRows.reduce((s, r) => s + Number(r.ore ?? 0), 0),
     orePesate: filteredRows.reduce((s, r) => s + Number(r.ore_pesate ?? 0), 0),
@@ -60,12 +78,15 @@ export default function Report() {
     <div>
       <PageHeader
         title="Report PDF"
-        description="Genera un PDF reale con il dettaglio delle ore e le descrizioni inserite dai dipendenti."
+        description="Genera un documento PDF professionale con il dettaglio delle ore e le descrizioni inserite."
         actions={
           <>
             <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
             <button className="button secondary" onClick={() => downloadTimesheetCsv(filteredRows, `report-ore-${month}-${year}.csv`)} disabled={filteredRows.length === 0}><Download size={16} /> CSV</button>
-            <button className="button" onClick={() => generateTimesheetPdf(filteredRows, { month, year }).save(`Report_ore_${year}_${String(month).padStart(2, "0")}.pdf`)} disabled={filteredRows.length === 0}><FileText size={16} /> Genera PDF</button>
+            <button className="button" onClick={handleGeneratePdf} disabled={filteredRows.length === 0 || generatingPdf}>
+              {generatingPdf ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
+              {generatingPdf ? "Generazione..." : "Genera PDF"}
+            </button>
           </>
         }
       />
