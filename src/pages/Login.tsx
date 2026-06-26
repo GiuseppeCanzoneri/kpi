@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
+import { ArrowRight, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
 
@@ -7,7 +8,6 @@ export default function Login() {
   const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "signup">("login");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -18,36 +18,104 @@ export default function Login() {
     setBusy(true);
     setMessage(null);
 
-    const authCall = mode === "login"
-      ? supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
-      : supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
 
-    const { error } = await authCall;
     setBusy(false);
-    if (error) setMessage(error.message);
-    else if (mode === "signup") setMessage("Utente creato. Ora assegna un ruolo in Accessi e ruoli / user_area_roles.");
+
+    if (error) {
+      setMessage("Credenziali non valide oppure utente non abilitato. Verifica email e password.");
+    }
   };
 
   return (
-    <div className="login-page">
-      <form className="login-card" onSubmit={submit}>
-        <div className="brand center">
-          <div className="brand-mark">K</div>
-          <div>
-            <h1>KPI Ore</h1>
-            <p>Contabilità Ore Infragruppo</p>
+    <div className="login-v2-page">
+      <div className="login-v2-bg" />
+
+      <section className="login-v2-panel" aria-label="Accesso gestionale KPI">
+        <div className="login-v2-hero">
+          <div className="login-v2-kicker">Gestionale interno</div>
+          <h1>KPI / Contabilità ore infragruppo</h1>
+          <p>
+            Accesso riservato agli utenti abilitati. Le ore caricate entrano subito nei
+            riepiloghi approvati, con controllo successivo da Admin Area e Super Admin.
+          </p>
+
+          <div className="login-v2-points">
+            <div>
+              <ShieldCheck size={18} />
+              <span>Accesso controllato per ruolo</span>
+            </div>
+            <div>
+              <ShieldCheck size={18} />
+              <span>Report mensili e fatture infragruppo</span>
+            </div>
+            <div>
+              <ShieldCheck size={18} />
+              <span>Timesheet, aree, commesse e tariffari</span>
+            </div>
           </div>
         </div>
 
-        {message && <div className="alert warning">{message}</div>}
+        <form className="login-v2-card" onSubmit={submit}>
+          <div className="login-v2-brand">
+            <div className="login-v2-logo">K</div>
+            <div>
+              <span>Modulo KPI</span>
+              <strong>Area riservata</strong>
+            </div>
+          </div>
 
-        <label>Email<input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-        <label>Password<input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} /></label>
-        <button className="button full" disabled={busy}>{busy ? "Attendi..." : mode === "login" ? "Accedi" : "Crea utente"}</button>
-        <button type="button" className="button secondary full" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
-          {mode === "login" ? "Crea primo utente" : "Ho già un account"}
-        </button>
-      </form>
+          <div className="login-v2-title">
+            <h2>Accedi al portale</h2>
+            <p>Usa l’account già autorizzato dal Super Admin.</p>
+          </div>
+
+          {message && <div className="login-v2-alert">{message}</div>}
+
+          <label className="login-v2-field">
+            <span>Email</span>
+            <div>
+              <Mail size={18} />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nome@azienda.it"
+                autoComplete="email"
+                required
+              />
+            </div>
+          </label>
+
+          <label className="login-v2-field">
+            <span>Password</span>
+            <div>
+              <LockKeyhole size={18} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Inserisci password"
+                autoComplete="current-password"
+                required
+              />
+            </div>
+          </label>
+
+          <button className="login-v2-submit" disabled={busy || loading}>
+            <span>{busy ? "Accesso in corso..." : "Accedi"}</span>
+            <ArrowRight size={19} />
+          </button>
+
+          <p className="login-v2-note">
+            La creazione utenti è gestita da <strong>Accessi e ruoli</strong>. Non è
+            disponibile registrazione pubblica.
+          </p>
+        </form>
+      </section>
     </div>
   );
 }
