@@ -18,7 +18,7 @@ type CandidateFlow = {
 };
 
 export default function Fatture() {
-  const { isSuperAdmin, isAdminArea, user } = useAuth();
+  const { isSuperAdmin, isAdminArea } = useAuth();
   const canManage = isSuperAdmin || isAdminArea;
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
