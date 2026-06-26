@@ -28,7 +28,6 @@ export type MonthlyPdfRow = {
 };
 
 const nowIt = () => new Date().toLocaleString("it-IT");
-const value = (v: unknown, fallback = "—") => String(v ?? "").trim() || fallback;
 
 function addHeader(doc: jsPDF, title: string, subtitle: string) {
   const pageWidth = doc.internal.pageSize.getWidth();
