@@ -424,3 +424,134 @@ select.input { appearance: auto; }
     padding: 24px;
   }
 }
+
+/* Aggiunte grafiche per la vista Timesheet divisa per Area -> Dipendente -> Attività */
+
+.timesheet-grouped-list {
+  display: grid;
+  gap: 22px;
+}
+
+.ts-area-group {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.ts-area-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.04), rgba(14, 165, 233, 0.07));
+}
+
+.ts-area-header h3 {
+  margin: 4px 0 0;
+  font-size: 1.15rem;
+  line-height: 1.25;
+  color: #0f172a;
+}
+
+.ts-area-summary,
+.ts-employee-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ts-employee-groups {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.ts-employee-group {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.82);
+  overflow: hidden;
+}
+
+.ts-employee-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.ts-employee-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 240px;
+}
+
+.ts-employee-title svg {
+  flex: 0 0 auto;
+  color: #2563eb;
+}
+
+.ts-employee-title h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.ts-employee-title span {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.ts-employee-group .timesheet-list {
+  padding: 14px;
+}
+
+.ts-activity-focus {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.ts-activity-focus span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.ts-activity-focus p {
+  margin: 0;
+  color: #0f172a;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .ts-area-header,
+  .ts-employee-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ts-area-summary,
+  .ts-employee-summary {
+    justify-content: flex-start;
+  }
+}
