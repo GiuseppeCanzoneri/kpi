@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, FilePlus2, FileText, RefreshCw } from "lucide-react";
+import { AlertTriangle, FilePlus2, FileText, RefreshCw, Download } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { supabase } from "../integrations/supabase/client";
@@ -109,27 +109,9 @@ export default function Fatture() {
       return;
     }
 
-    const { data: freshInvoices, error: invoiceError } = await supabase
-      .from("v_intercompany_invoices")
-      .select("*")
-      .eq("mese", month)
-      .eq("anno", year)
-      .order("employer_company_code", { ascending: true });
-
     setGenerating(false);
-
-    if (invoiceError) {
-      setError(invoiceError.message);
-      return;
-    }
-
-    const generatedRows = (freshInvoices ?? []) as IntercompanyInvoiceView[];
-    setMessage(`Fatture generate/aggiornate: ${Number(data ?? generatedRows.length)}. Lo stato già modificato viene mantenuto.`);
+    setMessage(`Fatture generate/aggiornate con successo. Ora puoi scaricare i PDF.`);
     await load();
-
-    if (generatedRows.length > 0) {
-      printInvoicesReport(generatedRows, { month, year });
-    }
   };
 
   const generateDetailPdf = async () => {
@@ -162,7 +144,7 @@ export default function Fatture() {
     const invoiceRows = visibleRows.filter((r) => r.employer_company_id !== r.beneficiary_company_id);
 
     if (invoiceRows.length === 0) {
-      window.alert("Non ci sono ore infragruppo da esportare: per il mese selezionato le ore risultano interne alla stessa società.");
+      window.alert("Non ci sono ore infragruppo da esportare.");
       return;
     }
 
@@ -190,7 +172,7 @@ export default function Fatture() {
       return;
     }
 
-    setMessage(`Stato fattura aggiornato: ${stato}.`);
+    setMessage(`Stato aggiornato.`);
     await load();
   };
 
@@ -235,83 +217,72 @@ export default function Fatture() {
     <div className="page-shell">
       <PageHeader
         title="Fatture infragruppo"
-        description="Genera prospetti solo quando la società datrice è diversa dalla società beneficiaria. Il PDF dettagli esporta le descrizioni scritte dai dipendenti."
+        description="Genera i prospetti per le prestazioni tra società diverse. Una volta generati, puoi scaricare il riepilogo totale o i singoli dettagli."
         actions={
           <div className="actions-row">
             <button className="button secondary" onClick={() => void load()} disabled={loading}>
               <RefreshCw size={16} />
               Aggiorna
             </button>
-            <button className="button secondary" onClick={() => void generateInvoices()} disabled={!canManage || generating || candidateFlows.length === 0}>
+            <button className="button" onClick={() => void generateInvoices()} disabled={!canManage || generating || candidateFlows.length === 0}>
               <FilePlus2 size={16} />
-              {generating ? "Genero..." : "Genera fatture"}
+              {generating ? "Generazione in corso..." : "Genera fatture"}
             </button>
-            <button className="button secondary" onClick={() => printInvoicesReport(invoices, { month, year })} disabled={invoices.length === 0}>
-              <FileText size={16} />
-              PDF prospetti
-            </button>
-            <button className="button" onClick={() => void generateDetailPdf()} disabled={liveRows.length === 0 || exportingPdf}>
-              <FileText size={16} />
-              {exportingPdf ? "Genero..." : "PDF dettagli"}
-            </button>
+            {invoices.length > 0 && (
+              <button className="button secondary" onClick={() => printInvoicesReport(invoices, { month, year })}>
+                <Download size={16} />
+                Scarica tutto (Riepilogo)
+              </button>
+            )}
           </div>
         }
       />
 
       <section className="kpi-grid three">
-        <div className="kpi-card"><span>Prospetti</span><strong>{invoices.length}</strong><small>Mese {month}/{year}</small></div>
-        <div className="kpi-card"><span>Imponibile</span><strong>{euro(totals.imponibile)}</strong><small>Somma fatture</small></div>
+        <div className="kpi-card"><span>Prospetti in lista</span><strong>{invoices.length}</strong><small>Mese {month}/{year}</small></div>
+        <div className="kpi-card"><span>Imponibile totale</span><strong>{euro(totals.imponibile)}</strong><small>Somma flussi</small></div>
         <div className="kpi-card"><span>Totale lordo</span><strong>{euro(totals.totale)}</strong><small>IVA inclusa</small></div>
       </section>
 
       <section className="panel filters-panel">
-        <label>
-          Mese
-          <input className="input compact" type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} />
-        </label>
-        <label>
-          Anno
-          <input className="input compact" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
-        </label>
+        <div className="filters-row">
+          <label>Mese <input className="input compact" type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} /></label>
+          <label>Anno <input className="input compact" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label>
+        </div>
         <div className="panel-total">
-          <strong>{candidateFlows.length}</strong> flussi fatturabili · <strong>{numberIt(candidateFlows.reduce((s, r) => s + r.ore, 0))}</strong> ore
+          <strong>{candidateFlows.length}</strong> flussi infragruppo rilevati · <strong>{numberIt(candidateFlows.reduce((s, r) => s + r.ore, 0))}</strong> ore totali
         </div>
       </section>
 
-      {error && <div className="alert"><AlertTriangle size={16} />{error}</div>}
+      {error && <div className="alert error"><AlertTriangle size={16} />{error}</div>}
       {message && <div className="alert success">{message}</div>}
-      {loading && <div className="panel muted">Caricamento...</div>}
+      {loading && <div className="panel muted">Caricamento dati...</div>}
 
       {candidateFlows.length === 0 && liveRows.length > 0 && (
         <div className="panel muted">
-          Le ore del mese sono presenti, ma non generano fatture infragruppo perché risultano interne alla stessa società.
+          Non ci sono flussi infragruppo per questo mese (tutte le ore sono interne alla stessa società).
         </div>
       )}
 
-      {candidateFlows.length > 0 && invoices.length === 0 && (
-        <div className="panel muted">
-          Ci sono flussi infragruppo approvati per il mese selezionato. Premi Genera fatture per creare i prospetti.
+      {invoices.length === 0 && candidateFlows.length > 0 && !loading && (
+        <div className="empty-state">
+          <strong>Fatture non ancora generate</strong>
+          <p>Sono stati rilevati flussi infragruppo. Clicca su "Genera fatture" per caricarli in questa lista.</p>
         </div>
       )}
 
-      {invoices.length === 0 ? (
-        <EmptyState title="Nessuna fattura generata" text="Genera i prospetti solo se ci sono flussi tra società diverse." />
-      ) : (
-        <div className="table-card">
+      {invoices.length > 0 && (
+        <div className="table-wrap elevated-table">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Società emittente</th>
-                <th>Società destinataria</th>
-                <th>Competenza</th>
+                <th>Emittente</th>
+                <th>Destinataria</th>
                 <th>Imponibile</th>
                 <th>IVA</th>
                 <th>Totale</th>
-                <th>Numero fattura</th>
-                <th>Data fattura</th>
                 <th>Stato</th>
-                <th>Note</th>
-                <th>PDF</th>
+                <th className="text-right">Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -319,26 +290,24 @@ export default function Fatture() {
                 <tr key={i.id}>
                   <td><strong>{i.employer_company_code ?? i.employer_company_name}</strong></td>
                   <td>{i.beneficiary_company_code ?? i.beneficiary_company_name}</td>
-                  <td>{i.mese}/{i.anno}</td>
                   <td>{euro(i.imponibile)}</td>
                   <td>{euro(i.iva)}</td>
                   <td><strong>{euro(i.totale)}</strong></td>
-                  <td>{i.numero_fattura ?? "—"}</td>
-                  <td>{i.data_fattura ?? "—"}</td>
                   <td>
                     {canManage ? (
                       <select className="input small" value={i.stato} onChange={(e) => void updateStatus(i, e.target.value as InvoiceStatus)}>
                         {invoiceStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     ) : (
-                      <span className="badge ok">{i.stato}</span>
+                      <span className="status-pill approvato">{i.stato}</span>
                     )}
                   </td>
-                  <td>{i.note ?? "—"}</td>
-                  <td>
-                    <button className="button secondary small" type="button" onClick={() => void generateSingleInvoicePdf(i)} disabled={exportingPdf}>
-                      PDF
-                    </button>
+                  <td className="text-right">
+                    <div className="row-actions justify-end">
+                      <button className="icon-button" onClick={() => void generateSingleInvoicePdf(i)} disabled={exportingPdf} title="Scarica PDF Prospetto + Dettagli">
+                        <Download size={15} /> PDF
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
