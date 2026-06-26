@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, FilePlus2, FileText, RefreshCw, Download } from "lucide-react";
+import { AlertTriangle, FilePlus2, RefreshCw, Download } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
-import { EmptyState } from "../components/EmptyState";
 import { supabase } from "../integrations/supabase/client";
 import type { IntercompanyInvoiceView, InvoiceStatus, MonthlySummaryLive, TimesheetView } from "../types/db";
 import { euro, numberIt } from "../lib/format";
 import { useAuth } from "../hooks/useAuth";
 import { printInvoicesReport, printTimesheetReport } from "../lib/reportPdf";
-import { filterRowsByRole } from "../lib/kpiData";
 
 const invoiceStatuses: InvoiceStatus[] = ["Non necessaria", "Da emettere", "Emessa", "Pagata"];
 
@@ -20,7 +18,7 @@ type CandidateFlow = {
 };
 
 export default function Fatture() {
-  const { isSuperAdmin, isAdminArea, areaIds, user } = useAuth();
+  const { isSuperAdmin, isAdminArea, user } = useAuth();
   const canManage = isSuperAdmin || isAdminArea;
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -98,7 +96,7 @@ export default function Fatture() {
     setError(null);
     setMessage(null);
 
-    const { data, error } = await supabase.rpc("kpi_generate_intercompany_invoices", {
+    const { error } = await supabase.rpc("kpi_generate_intercompany_invoices", {
       p_mese: month,
       p_anno: year,
     });
@@ -112,47 +110,6 @@ export default function Fatture() {
     setGenerating(false);
     setMessage(`Fatture generate/aggiornate con successo. Ora puoi scaricare i PDF.`);
     await load();
-  };
-
-  const generateDetailPdf = async () => {
-    setExportingPdf(true);
-    setError(null);
-
-    const { data, error } = await supabase
-      .from("v_timesheet_entries")
-      .select("*")
-      .eq("mese", month)
-      .eq("anno", year)
-      .eq("stato", "Approvato")
-      .order("data", { ascending: true });
-
-    setExportingPdf(false);
-
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    const visibleRows = filterRowsByRole(
-      (data ?? []) as TimesheetView[],
-      areaIds,
-      user?.email?.toLowerCase() ?? null,
-      isSuperAdmin,
-      isAdminArea,
-    );
-
-    const invoiceRows = visibleRows.filter((r) => r.employer_company_id !== r.beneficiary_company_id);
-
-    if (invoiceRows.length === 0) {
-      window.alert("Non ci sono ore infragruppo da esportare.");
-      return;
-    }
-
-    printTimesheetReport(invoiceRows, {
-      month,
-      year,
-      title: "Fatture infragruppo - dettaglio ore dipendenti",
-    });
   };
 
   const updateStatus = async (invoice: IntercompanyInvoiceView, stato: InvoiceStatus) => {
