@@ -1,350 +1,392 @@
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, RefreshCw, ShieldCheck, UserPlus, XCircle } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, KeyRound, RefreshCw, Save, ShieldCheck, UserPlus } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
-import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
-import type { BusinessArea, Company, Employee, KpiRole, LocationRow, TariffProfile, UserAreaRole } from "../types/db";
+import { supabase } from "../integrations/supabase/client";
+import { fetchLookupData, type LookupData } from "../lib/kpiData";
+import type { KpiRole, UserAreaRole } from "../types/db";
 
-interface AccessForm {
+interface RoleForm {
   email: string;
-  nome: string;
-  cognome: string;
-  mansione: string;
+  password: string;
+  confirmPassword: string;
   role: KpiRole;
   company_id: string;
   location_id: string;
   business_area_id: string;
-  tariff_profile_id: string;
   can_view_amounts: boolean;
 }
 
-const emptyForm: AccessForm = {
+const emptyForm: RoleForm = {
   email: "",
-  nome: "",
-  cognome: "",
-  mansione: "",
+  password: "",
+  confirmPassword: "",
   role: "USER_AREA",
   company_id: "",
   location_id: "",
   business_area_id: "",
-  tariff_profile_id: "",
   can_view_amounts: false,
 };
 
-function guessNameFromEmail(email: string) {
-  const local = email.split("@")[0] ?? "utente";
-  const parts = local.replace(/[._-]+/g, " ").split(" ").filter(Boolean);
-  const capitalized = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase());
-  return {
-    nome: capitalized[0] || "Utente",
-    cognome: capitalized.slice(1).join(" ") || "Da aggiornare",
-  };
-}
-
 export default function Accessi() {
-  const { user, isSuperAdmin, isAdminArea, areaIds, refreshRoles } = useAuth();
-  const canAdmin = isSuperAdmin || isAdminArea;
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [locations, setLocations] = useState<LocationRow[]>([]);
-  const [areas, setAreas] = useState<BusinessArea[]>([]);
-  const [tariffProfiles, setTariffProfiles] = useState<TariffProfile[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [roles, setRoles] = useState<UserAreaRole[]>([]);
-  const [form, setForm] = useState<AccessForm>(emptyForm);
-  const [loading, setLoading] = useState(false);
+  const auth = useAuth();
+  const [lookup, setLookup] = useState<LookupData | null>(null);
+  const [rows, setRows] = useState<UserAreaRole[]>([]);
+  const [form, setForm] = useState<RoleForm>(emptyForm);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const allowedAreas = useMemo(() => {
-    if (isSuperAdmin) return areas;
-    return areas.filter((a) => areaIds.includes(a.id));
-  }, [areas, areaIds, isSuperAdmin]);
+  const canCreateAdvancedRoles = auth.isSuperAdmin;
+  const availableRoles: KpiRole[] = canCreateAdvancedRoles
+    ? ["USER_AREA", "ADMIN_AREA", "SUPER_ADMIN"]
+    : ["USER_AREA"];
 
-  const roleOptions: KpiRole[] = isSuperAdmin ? ["SUPER_ADMIN", "ADMIN_AREA", "USER_AREA"] : ["USER_AREA"];
+  const areaNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    lookup?.areas.forEach((area) => map.set(area.id, `${area.codice_area} · ${area.nome_area}`));
+    return map;
+  }, [lookup?.areas]);
 
-  const filteredTariffProfiles = useMemo(() => {
-    if (!form.business_area_id) return tariffProfiles;
-    return tariffProfiles.filter((p) => !p.business_area_id || p.business_area_id === form.business_area_id);
-  }, [tariffProfiles, form.business_area_id]);
-
-  const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
-  const locationById = useMemo(() => new Map(locations.map((l) => [l.id, l])), [locations]);
-  const areaById = useMemo(() => new Map(areas.map((a) => [a.id, a])), [areas]);
-  const employeeByEmail = useMemo(() => new Map(employees.map((e) => [e.email.toLowerCase(), e])), [employees]);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [companiesRes, locationsRes, areasRes, profilesRes, employeesRes, rolesRes] = await Promise.all([
-      supabase.from("companies").select("*").order("ragione_sociale"),
-      supabase.from("locations").select("*").order("nome_sede"),
-      supabase.from("business_areas").select("*").order("nome_area"),
-      supabase.from("tariff_profiles").select("*").eq("attivo", true).order("codice_profilo"),
-      supabase.from("employees").select("*").order("cognome"),
-      supabase.from("user_area_roles").select("*").order("assigned_at", { ascending: false }),
-    ]);
 
-    const firstError = [companiesRes, locationsRes, areasRes, profilesRes, employeesRes, rolesRes].find((r) => r.error)?.error;
-    if (firstError) {
-      setError(firstError.message);
+    try {
+      const lookupRows = await fetchLookupData(auth.areaIds, auth.isSuperAdmin);
+      setLookup(lookupRows);
+
+      let query = supabase
+        .from("user_area_roles")
+        .select("*")
+        .order("assigned_at", { ascending: false });
+
+      if (!auth.isSuperAdmin && auth.areaIds.length > 0) {
+        query = query.in("business_area_id", auth.areaIds);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      setRows((data ?? []) as UserAreaRole[]);
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+      setRows([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setCompanies((companiesRes.data ?? []) as Company[]);
-    setLocations((locationsRes.data ?? []) as LocationRow[]);
-    setAreas((areasRes.data ?? []) as BusinessArea[]);
-    setTariffProfiles((profilesRes.data ?? []) as TariffProfile[]);
-    setEmployees((employeesRes.data ?? []) as Employee[]);
-    setRoles((rolesRes.data ?? []) as UserAreaRole[]);
-    setLoading(false);
-  };
+  }, [auth.areaIds, auth.isSuperAdmin]);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
-  useEffect(() => {
-    if (!form.business_area_id || form.tariff_profile_id) return;
-    const firstProfile = tariffProfiles.find((p) => p.business_area_id === form.business_area_id) ?? tariffProfiles[0];
-    if (firstProfile) setForm((prev) => ({ ...prev, tariff_profile_id: firstProfile.id }));
-  }, [form.business_area_id, form.tariff_profile_id, tariffProfiles]);
+  function update<K extends keyof RoleForm>(key: K, value: RoleForm[K]) {
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "role" && value === "SUPER_ADMIN") {
+        next.business_area_id = "";
+        next.can_view_amounts = true;
+      }
+      if (key === "role" && value === "ADMIN_AREA") {
+        next.can_view_amounts = true;
+      }
+      return next;
+    });
+  }
 
-  const assignRole = async () => {
-    setError(null);
+  async function save(event: FormEvent) {
+    event.preventDefault();
     setMessage(null);
+    setError(null);
 
     const email = form.email.trim().toLowerCase();
-    if (!email) {
-      setError("Inserisci l'email dell'utente.");
+
+    if (!email || !form.role) {
+      setError("Inserisci email e ruolo.");
       return;
     }
 
-    if (!isSuperAdmin && (!form.business_area_id || !areaIds.includes(form.business_area_id))) {
+    if (!form.password || form.password.length < 6) {
+      setError("Inserisci una password di almeno 6 caratteri.");
+      return;
+    }
+
+    if (form.password !== form.confirmPassword) {
+      setError("Le password non coincidono.");
+      return;
+    }
+
+    if (!auth.isSuperAdmin && form.role !== "USER_AREA") {
+      setError("L'ADMIN_AREA può creare solo USER_AREA.");
+      return;
+    }
+
+    if (form.role !== "SUPER_ADMIN" && !form.business_area_id) {
+      setError("Seleziona un'area per USER_AREA o ADMIN_AREA.");
+      return;
+    }
+
+    if (!auth.isSuperAdmin && !auth.areaIds.includes(form.business_area_id)) {
       setError("Puoi assegnare utenti solo alle tue aree.");
       return;
     }
 
-    const guessed = guessNameFromEmail(email);
-    const nome = form.nome.trim() || guessed.nome;
-    const cognome = form.cognome.trim() || guessed.cognome;
-    const defaultCompanyId = form.company_id || companies[0]?.id;
-    const defaultTariffProfile = form.tariff_profile_id || filteredTariffProfiles[0]?.id || tariffProfiles[0]?.id;
+    setSaving(true);
 
-    if (!defaultCompanyId || !defaultTariffProfile) {
-      setError("Manca una società o un profilo tariffario di default. Compila prima le anagrafiche.");
-      return;
-    }
-
-    setLoading(true);
-
-    const rolePayload = {
-      email,
-      role: form.role,
-      company_id: form.company_id || null,
-      location_id: form.location_id || null,
-      business_area_id: form.role === "SUPER_ADMIN" ? null : form.business_area_id || null,
-      can_view_amounts: isSuperAdmin ? form.can_view_amounts || form.role !== "USER_AREA" : false,
-      active: true,
-      assigned_by: user?.id ?? null,
-      assigned_at: new Date().toISOString(),
-    };
-
-    const { error: roleError } = await supabase.from("user_area_roles").insert(rolePayload);
-    if (roleError) {
-      setError(roleError.message);
-      setLoading(false);
-      return;
-    }
-
-    const existingEmployee = employeeByEmail.get(email);
-    if (existingEmployee) {
-      const { error: employeeUpdateError } = await supabase
-        .from("employees")
-        .update({
-          nome: existingEmployee.nome || nome,
-          cognome: existingEmployee.cognome || cognome,
-          company_id: existingEmployee.company_id || defaultCompanyId,
-          location_id: existingEmployee.location_id || form.location_id || null,
-          tariff_profile_id: existingEmployee.tariff_profile_id || defaultTariffProfile,
-          mansione: existingEmployee.mansione || form.mansione || null,
-          attivo: true,
-        })
-        .eq("id", existingEmployee.id);
-      if (employeeUpdateError) {
-        setError(employeeUpdateError.message);
-        setLoading(false);
-        return;
-      }
-    } else {
-      const { error: employeeInsertError } = await supabase.from("employees").insert({
+    const { data, error } = await supabase.functions.invoke("create-kpi-user", {
+      body: {
         email,
-        nome,
-        cognome,
-        company_id: defaultCompanyId,
+        password: form.password,
+        role: form.role,
+        company_id: form.company_id || null,
         location_id: form.location_id || null,
-        tariff_profile_id: defaultTariffProfile,
-        mansione: form.mansione || null,
-        attivo: true,
-      });
-      if (employeeInsertError) {
-        setError(employeeInsertError.message);
-        setLoading(false);
-        return;
-      }
+        business_area_id: form.role === "SUPER_ADMIN" ? null : form.business_area_id,
+        can_view_amounts: form.role === "ADMIN_AREA" || form.role === "SUPER_ADMIN" || form.can_view_amounts,
+      },
+    });
+
+    setSaving(false);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    if (data?.error) {
+      setError(data.error);
+      return;
     }
 
     setForm(emptyForm);
-    setMessage("Ruolo assegnato e dipendente creato/aggiornato correttamente.");
-    await Promise.all([load(), refreshRoles()]);
-    setLoading(false);
-  };
+    setMessage(data?.message ?? "Utente creato e ruolo assegnato.");
+    await load();
+    await auth.refreshRoles();
+  }
 
-  const toggleRole = async (role: UserAreaRole, active: boolean) => {
+  async function toggleActive(row: UserAreaRole) {
+    setMessage(null);
     setError(null);
-    const { error } = await supabase.from("user_area_roles").update({ active }).eq("id", role.id);
-    if (error) setError(error.message);
-    else {
-      setMessage(active ? "Ruolo riattivato." : "Ruolo disattivato.");
-      await Promise.all([load(), refreshRoles()]);
-    }
-  };
 
-  if (!canAdmin) {
-    return <div className="panel"><h3>Accesso non consentito</h3><p className="muted">Questa sezione è riservata agli amministratori.</p></div>;
+    const { error } = await supabase
+      .from("user_area_roles")
+      .update({ active: !row.active })
+      .eq("id", row.id);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    await load();
+    await auth.refreshRoles();
   }
 
   return (
-    <div className="page access-page">
+    <div>
       <PageHeader
-        kicker="Modulo KPI"
         title="Accessi e ruoli"
-        description="Assegna un ruolo e crea automaticamente il dipendente collegato al timesheet. Così l’utente non deve selezionarsi: il sistema lo riconosce dalla sua email."
+        description="Crea l'utente con password e assegna subito il ruolo KPI. La registrazione pubblica dal login resta disattivata."
+        actions={
+          <button className="button secondary" onClick={() => void load()} disabled={loading}>
+            <RefreshCw size={16} /> Aggiorna
+          </button>
+        }
       />
 
-      {error && <div className="alert error"><XCircle size={16} /> {error}</div>}
-      {message && <div className="alert success"><CheckCircle2 size={16} /> {message}</div>}
+      <div className="kpi-grid small">
+        <div className="kpi-card">
+          <span>Utenti configurati</span>
+          <strong>{rows.length}</strong>
+          <small>Ruoli attivi e disattivi</small>
+        </div>
+        <div className="kpi-card">
+          <span>Area corrente</span>
+          <strong>{auth.isSuperAdmin ? "Tutte" : auth.areaIds.length}</strong>
+          <small>Ambito di gestione</small>
+        </div>
+        <div className="kpi-card">
+          <span>Sicurezza</span>
+          <strong>Password</strong>
+          <small>Creata da admin</small>
+        </div>
+      </div>
 
-      <section className="panel hero-panel">
-        <div className="panel-header align-start">
-          <div>
-            <span className="eyebrow">Nuova abilitazione</span>
-            <h3>Assegna utente</h3>
-            <p>Il ruolo finisce in <strong>Accessi</strong> e l’email viene sincronizzata in <strong>Dipendenti</strong>.</p>
+      {error && (
+        <div className="alert error">
+          <AlertTriangle size={16} /> {error}
+        </div>
+      )}
+
+      {message && (
+        <div className="alert success">
+          <CheckCircle2 size={16} /> {message}
+        </div>
+      )}
+
+      <div className="split-grid access-grid">
+        <form className="panel access-form" onSubmit={save}>
+          <div className="panel-title">
+            <UserPlus size={18} />
+            <div>
+              <h3>Nuova utenza</h3>
+              <p>Email, password e ruolo operativo.</p>
+            </div>
           </div>
-          <button className="button secondary" onClick={load} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
-        </div>
 
-        <div className="form-grid refined">
-          <label>
-            <span>Email utente *</span>
-            <input className="input" type="email" value={form.email} placeholder="nome.cognome@azienda.it" onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </label>
-          <label>
-            <span>Ruolo *</span>
-            <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as KpiRole })}>
-              {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Nome dipendente</span>
-            <input className="input" value={form.nome} placeholder="Compilato automaticamente se vuoto" onChange={(e) => setForm({ ...form, nome: e.target.value })} />
-          </label>
-          <label>
-            <span>Cognome dipendente</span>
-            <input className="input" value={form.cognome} placeholder="Compilato automaticamente se vuoto" onChange={(e) => setForm({ ...form, cognome: e.target.value })} />
-          </label>
-          <label>
-            <span>Società datrice</span>
-            <select className="input" value={form.company_id} onChange={(e) => setForm({ ...form, company_id: e.target.value })}>
-              <option value="">Default / da completare</option>
-              {companies.map((c) => <option key={c.id} value={c.id}>{c.codice_societa} · {c.ragione_sociale}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Sede</span>
-            <select className="input" value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
-              <option value="">Non specificata</option>
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.nome_sede}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Area</span>
-            <select className="input" value={form.business_area_id} onChange={(e) => setForm({ ...form, business_area_id: e.target.value, tariff_profile_id: "" })} disabled={form.role === "SUPER_ADMIN"}>
-              <option value="">Tutte / non specificata</option>
-              {allowedAreas.map((a) => <option key={a.id} value={a.id}>{a.codice_area} · {a.nome_area}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Profilo tariffario dipendente</span>
-            <select className="input" value={form.tariff_profile_id} onChange={(e) => setForm({ ...form, tariff_profile_id: e.target.value })}>
-              <option value="">Default per area</option>
-              {filteredTariffProfiles.map((p) => <option key={p.id} value={p.id}>{p.codice_profilo} · {p.nome_profilo}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Mansione</span>
-            <input className="input" value={form.mansione} placeholder="Es. Tecnico area, amministrazione, gare..." onChange={(e) => setForm({ ...form, mansione: e.target.value })} />
-          </label>
-          <label className="check-row">
-            <input type="checkbox" checked={form.can_view_amounts} onChange={(e) => setForm({ ...form, can_view_amounts: e.target.checked })} disabled={!isSuperAdmin} />
-            <span>Può vedere importi economici</span>
-          </label>
-        </div>
+          <div className="form-grid refined">
+            <label>
+              Email utente *
+              <input
+                className="input"
+                type="email"
+                value={form.email}
+                onChange={(event) => update("email", event.target.value)}
+                placeholder="utente@azienda.it"
+                autoComplete="off"
+              />
+            </label>
 
-        <div className="panel-actions">
-          <button className="button xl" onClick={assignRole} disabled={loading}><UserPlus size={18} /> Assegna ruolo e crea dipendente</button>
-        </div>
-      </section>
+            <label>
+              Ruolo *
+              <select className="input" value={form.role} onChange={(event) => update("role", event.target.value as KpiRole)}>
+                {availableRoles.map((role) => (
+                  <option key={role} value={role}>{role}</option>
+                ))}
+              </select>
+            </label>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <span className="eyebrow">Ruoli attivi</span>
-            <h3>Assegnazioni</h3>
+            <label>
+              Password *
+              <input
+                className="input"
+                type="password"
+                value={form.password}
+                onChange={(event) => update("password", event.target.value)}
+                placeholder="Minimo 6 caratteri"
+                autoComplete="new-password"
+              />
+            </label>
+
+            <label>
+              Conferma password *
+              <input
+                className="input"
+                type="password"
+                value={form.confirmPassword}
+                onChange={(event) => update("confirmPassword", event.target.value)}
+                placeholder="Ripeti password"
+                autoComplete="new-password"
+              />
+            </label>
+
+            <label>
+              Società
+              <select className="input" value={form.company_id} onChange={(event) => update("company_id", event.target.value)}>
+                <option value="">Tutte / non specificata</option>
+                {lookup?.companies.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.codice_societa} · {item.ragione_sociale}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Sede
+              <select className="input" value={form.location_id} onChange={(event) => update("location_id", event.target.value)}>
+                <option value="">Tutte / non specificata</option>
+                {lookup?.locations.map((item) => (
+                  <option key={item.id} value={item.id}>{item.nome_sede}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className={form.role === "SUPER_ADMIN" ? "muted-field" : ""}>
+              Area {form.role !== "SUPER_ADMIN" ? "*" : ""}
+              <select
+                className="input"
+                value={form.business_area_id}
+                onChange={(event) => update("business_area_id", event.target.value)}
+                disabled={form.role === "SUPER_ADMIN"}
+              >
+                <option value="">Seleziona area</option>
+                {lookup?.areas.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.codice_area} · {item.nome_area}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={form.role === "ADMIN_AREA" || form.role === "SUPER_ADMIN" || form.can_view_amounts}
+                disabled={form.role === "ADMIN_AREA" || form.role === "SUPER_ADMIN"}
+                onChange={(event) => update("can_view_amounts", event.target.checked)}
+              />
+              Può vedere importi
+            </label>
           </div>
-          <span className="count-badge">{roles.length} assegnazioni</span>
-        </div>
-        <div className="table-wrap elevated-table">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Dipendente</th>
-                <th>Ruolo</th>
-                <th>Società</th>
-                <th>Sede</th>
-                <th>Area</th>
-                <th>Importi</th>
-                <th>Stato</th>
-                <th>Azioni</th>
-              </tr>
-            </thead>
-            <tbody>
-              {roles.map((role) => {
-                const employee = employeeByEmail.get(role.email.toLowerCase());
-                return (
-                  <tr key={role.id}>
-                    <td><strong>{role.email}</strong></td>
-                    <td>{employee ? `${employee.nome} ${employee.cognome}` : <span className="muted">Da creare</span>}</td>
-                    <td><span className={`role-badge role-${role.role.toLowerCase()}`}>{role.role}</span></td>
-                    <td>{role.company_id ? companyById.get(role.company_id)?.codice_societa ?? "—" : "Tutte"}</td>
-                    <td>{role.location_id ? locationById.get(role.location_id)?.nome_sede ?? "—" : "—"}</td>
-                    <td>{role.business_area_id ? `${areaById.get(role.business_area_id)?.codice_area ?? ""} · ${areaById.get(role.business_area_id)?.nome_area ?? "Area"}` : "Tutte"}</td>
-                    <td>{role.can_view_amounts ? "Sì" : "No"}</td>
-                    <td>{role.active ? <span className="status-pill ok">Attivo</span> : <span className="status-pill off">Disattivo</span>}</td>
+
+          <div className="hint-box">
+            <KeyRound size={16} />
+            L'utente potrà accedere subito dal login con la password impostata qui.
+          </div>
+
+          <button className="button full" disabled={saving}>
+            <Save size={16} /> {saving ? "Creo utenza..." : "Crea utente e assegna ruolo"}
+          </button>
+        </form>
+
+        <div className="panel">
+          <div className="panel-title">
+            <ShieldCheck size={18} />
+            <div>
+              <h3>Ruoli assegnati</h3>
+              <p>{rows.length} assegnazioni presenti.</p>
+            </div>
+          </div>
+
+          <div className="table-wrap">
+            <table className="data-table compact">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Ruolo</th>
+                  <th>Area</th>
+                  <th>Importi</th>
+                  <th>Stato</th>
+                  <th>Azioni</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td><strong>{row.email}</strong></td>
+                    <td><span className="status-pill approvato">{row.role}</span></td>
+                    <td>{row.business_area_id ? areaNameById.get(row.business_area_id) ?? row.business_area_id : "Tutte"}</td>
+                    <td>{row.can_view_amounts ? "Sì" : "No"}</td>
+                    <td>{row.active ? "Attivo" : "Disattivo"}</td>
                     <td>
-                      <button className="icon-button" onClick={() => toggleRole(role, !role.active)}>
-                        <ShieldCheck size={15} /> {role.active ? "Disattiva" : "Riattiva"}
+                      <button className="button secondary small" type="button" onClick={() => void toggleActive(row)}>
+                        {row.active ? "Disattiva" : "Attiva"}
                       </button>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="muted">Nessun ruolo configurato.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </section>
+      </div>
     </div>
   );
 }

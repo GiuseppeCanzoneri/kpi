@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   BadgeEuro,
   Building2,
+  CalendarDays,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
@@ -349,9 +350,21 @@ export default function Timesheet() {
       return;
     }
 
-    const { error } = form.id
-      ? await supabase.from("timesheet_entries").update(payload).eq("id", form.id)
-      : await supabase.from("timesheet_entries").insert(payload);
+    const { error } = await supabase.rpc("kpi_save_timesheet_entry", {
+      p_entry_id: form.id ?? null,
+      p_data: form.data,
+      p_employee_id: form.employee_id,
+      p_beneficiary_company_id: form.beneficiary_company_id,
+      p_location_id: form.location_id || null,
+      p_business_area_id: form.business_area_id,
+      p_project_id: form.project_id,
+      p_activity_category_id: form.activity_category_id,
+      p_cost_center_id: form.cost_center_id || null,
+      p_ore: Number(form.ore),
+      p_descrizione: form.descrizione || null,
+      p_note: form.note || null,
+      p_correction_note: form.correction_note || null,
+    });
 
     setSaving(false);
     if (error) {
