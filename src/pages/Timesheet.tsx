@@ -174,12 +174,9 @@ export default function Timesheet() {
   }, [loadAll]);
 
   const filteredProjects = useMemo(() => {
-    // Rimosso il filtro per area per permettere la visibilità globale delle commesse
-    if (!form?.beneficiary_company_id) return projects;
-    return projects.filter((p) => {
-      return p.company_id === form.beneficiary_company_id || !p.company_id;
-    });
-  }, [projects, form?.beneficiary_company_id]);
+    // Rimosso ogni filtro per permettere la visibilità globale richiesta
+    return projects;
+  }, [projects]);
 
   const filteredActivities = useMemo(() => {
     if (!form?.business_area_id) return activities;
