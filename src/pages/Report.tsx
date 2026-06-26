@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, FileText, RefreshCw, Loader2 } from "lucide-react";
+import { AlertTriangle, Download, FileText, RefreshCw, Loader2, User } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { supabase } from "../integrations/supabase/client";
@@ -21,6 +21,7 @@ export default function Report() {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [onlyIntercompany, setOnlyIntercompany] = useState(false);
   const [includeContested, setIncludeContested] = useState(true);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,19 +46,44 @@ export default function Report() {
     void load();
   }, [load]);
 
+  // Estrae la lista univoca dei dipendenti presenti nei dati caricati
+  const uniqueEmployees = useMemo(() => {
+    const map = new Map<string, string>();
+    rows.forEach(r => {
+      if (r.employee_id && r.employee_name) {
+        map.set(r.employee_id, r.employee_name);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
   const filteredRows = useMemo(() => rows.filter((r) => {
     if (onlyIntercompany && r.tipo_movimento !== "Infragruppo fatturabile") return false;
     if (!includeContested && r.is_contested) return false;
+    if (selectedEmployeeId && r.employee_id !== selectedEmployeeId) return false;
     return true;
-  }), [includeContested, onlyIntercompany, rows]);
+  }), [includeContested, onlyIntercompany, rows, selectedEmployeeId]);
 
   const handleGeneratePdf = async () => {
     if (filteredRows.length === 0) return;
     
     setGeneratingPdf(true);
     try {
-      const doc = generateTimesheetPdf(filteredRows, { month, year });
-      doc.save(`Report_Ore_${year}_${String(month).padStart(2, "0")}.pdf`);
+      const employeeName = selectedEmployeeId 
+        ? uniqueEmployees.find(e => e.id === selectedEmployeeId)?.name 
+        : "Tutti i dipendenti";
+        
+      const doc = generateTimesheetPdf(filteredRows, { 
+        month, 
+        year, 
+        title: `Report Ore - ${employeeName}` 
+      });
+      
+      const fileName = selectedEmployeeId 
+        ? `Report_Ore_${employeeName?.replace(/\s+/g, '_')}_${year}_${String(month).padStart(2, "0")}.pdf`
+        : `Report_Ore_Completo_${year}_${String(month).padStart(2, "0")}.pdf`;
+
+      doc.save(fileName);
       toast.success("PDF generato con successo");
     } catch (err) {
       console.error("Errore generazione PDF:", err);
@@ -78,14 +104,14 @@ export default function Report() {
     <div>
       <PageHeader
         title="Report PDF"
-        description="Genera un documento PDF professionale con il dettaglio delle ore e le descrizioni inserite."
+        description="Genera un documento PDF professionale. Puoi filtrare per un singolo dipendente o scaricare il report cumulativo."
         actions={
           <>
             <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
             <button className="button secondary" onClick={() => downloadTimesheetCsv(filteredRows, `report-ore-${month}-${year}.csv`)} disabled={filteredRows.length === 0}><Download size={16} /> CSV</button>
             <button className="button" onClick={handleGeneratePdf} disabled={filteredRows.length === 0 || generatingPdf}>
               {generatingPdf ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
-              {generatingPdf ? "Generazione..." : "Genera PDF"}
+              {generatingPdf ? "Generazione..." : selectedEmployeeId ? "PDF Dipendente" : "PDF Tutti"}
             </button>
           </>
         }
@@ -98,10 +124,29 @@ export default function Report() {
       </div>
 
       <div className="filters-bar pro-filters">
-        <label>Mese <input className="input small" type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} /></label>
-        <label>Anno <input className="input small" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label>
-        <label className="check-inline"><input type="checkbox" checked={onlyIntercompany} onChange={(e) => setOnlyIntercompany(e.target.checked)} /> Solo infragruppo</label>
-        <label className="check-inline"><input type="checkbox" checked={includeContested} onChange={(e) => setIncludeContested(e.target.checked)} /> Includi contestate</label>
+        <div className="flex gap-4 flex-wrap items-end">
+          <label>Mese <input className="input small" type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} /></label>
+          <label>Anno <input className="input small" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label>
+          
+          <label className="min-w-[200px]">
+            Dipendente
+            <select 
+              className="input" 
+              value={selectedEmployeeId} 
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            >
+              <option value="">Tutti i dipendenti</option>
+              {uniqueEmployees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="flex gap-4 mt-4 md:mt-0">
+          <label className="check-inline"><input type="checkbox" checked={onlyIntercompany} onChange={(e) => setOnlyIntercompany(e.target.checked)} /> Solo infragruppo</label>
+          <label className="check-inline"><input type="checkbox" checked={includeContested} onChange={(e) => setIncludeContested(e.target.checked)} /> Includi contestate</label>
+        </div>
       </div>
 
       {error && <div className="alert error"><AlertTriangle size={16} /> {error}</div>}
