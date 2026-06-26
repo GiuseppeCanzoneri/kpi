@@ -41,7 +41,7 @@ export default function Accessi() {
 
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving]off = useState(false);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Salvataggio bozza ad ogni modifica
