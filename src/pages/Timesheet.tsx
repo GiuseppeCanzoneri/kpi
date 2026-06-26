@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   BadgeEuro,
   Building2,
-  CalendarDays,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
