@@ -29,6 +29,26 @@ export type MonthlyPdfRow = {
 
 const nowIt = () => new Date().toLocaleString("it-IT");
 
+/**
+ * Funzione helper per chiamare autoTable in modo sicuro, 
+ * gestendo le differenze di importazione tra i vari ambienti.
+ */
+function safeAutoTable(doc: jsPDF, options: any) {
+  try {
+    if (typeof autoTable === 'function') {
+      autoTable(doc, options);
+    } else if ((autoTable as any).default && typeof (autoTable as any).default === 'function') {
+      (autoTable as any).default(doc, options);
+    } else if (typeof (doc as any).autoTable === 'function') {
+      (doc as any).autoTable(options);
+    } else {
+      console.error("Impossibile trovare la funzione autoTable");
+    }
+  } catch (err) {
+    console.error("Errore durante l'esecuzione di autoTable:", err);
+  }
+}
+
 function addHeader(doc: jsPDF, title: string, subtitle: string) {
   const pageWidth = doc.internal.pageSize.getWidth();
   
@@ -100,7 +120,7 @@ function addTimesheetTable(doc: jsPDF, rows: TimesheetView[], startY: number, ti
   doc.setTextColor(18, 57, 99);
   doc.text(title, 12, startY);
   
-  autoTable(doc, {
+  safeAutoTable(doc, {
     startY: startY + 5,
     head: [["Data", "Dipendente", "Da", "A", "Area", "Commessa", "Attività", "Ore", "Importo", "Descrizione"]],
     body: rows.map((r) => [
@@ -135,7 +155,7 @@ function addTimesheetTable(doc: jsPDF, rows: TimesheetView[], startY: number, ti
       9: { cellWidth: "auto" }
     },
     margin: { left: 12, right: 12 },
-    didParseCell: (data) => {
+    didParseCell: (data: any) => {
       const row = rows[data.row.index];
       if (data.section === "body" && row?.is_contested) {
         data.cell.styles.fillColor = [255, 245, 230];
@@ -190,7 +210,7 @@ export function generateMonthlySummaryPdf(summaryRows: MonthlyPdfRow[], detailRo
   doc.setTextColor(18, 57, 99);
   doc.text("Sintesi per Società e Area", 12, nextY);
 
-  autoTable(doc, {
+  safeAutoTable(doc, {
     startY: nextY + 5,
     head: [["Da Società", "A Società", "Area", "Righe", "Ore", "Ore Pesate", "Imponibile", "IVA", "Totale", "Stato"]],
     body: summaryRows.map((r) => [
@@ -239,7 +259,7 @@ export function generateIntercompanyInvoicesPdf(invoices: IntercompanyInvoiceVie
   doc.setTextColor(18, 57, 99);
   doc.text("Elenco Prospetti Fattura", 12, nextY);
 
-  autoTable(doc, {
+  safeAutoTable(doc, {
     startY: nextY + 5,
     head: [["Emittente", "Destinataria", "Mese", "Imponibile", "IVA", "Totale", "Stato", "Note"]],
     body: invoices.map((r) => [
