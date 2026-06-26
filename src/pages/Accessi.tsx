@@ -135,8 +135,8 @@ export default function Accessi() {
 
     setSaving(true);
 
-    // Utilizzo dell'URL completo per la Edge Function come richiesto dalle linee guida
-    const { data, error } = await supabase.functions.invoke("https://afvadcljctwduhoskccl.supabase.co/functions/v1/create-kpi-user", {
+    // Utilizzo del nome della funzione: il client Supabase gestisce l'URL di base
+    const { data, error } = await supabase.functions.invoke("create-kpi-user", {
       body: {
         email,
         password: form.password,
