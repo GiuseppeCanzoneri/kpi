@@ -56,6 +56,7 @@ export async function fetchLookupData(areaIds: Id[], isSuperAdmin: boolean, isAd
   const employeeRows = (employees.data ?? []) as Employee[];
 
   return {
+    // Società e Commesse sono ora globali per permettere l'infragruppo
     companies: ((companies.data ?? []) as Company[]).filter((row) => row.attiva !== false),
     locations: ((locations.data ?? []) as LocationRow[]).filter((row) => row.attiva !== false),
     areas: ((areas.data ?? []) as BusinessArea[]).filter((row) => row.attiva !== false && (!restrictedAreas || !row.id || restrictedAreas.has(row.id))),
@@ -64,7 +65,7 @@ export async function fetchLookupData(areaIds: Id[], isSuperAdmin: boolean, isAd
       if (isAdminArea && allowedEmployeeEmails) return allowedEmployeeEmails.has(employee.email.toLowerCase());
       return true;
     }),
-    projects: ((projects.data ?? []) as Project[]).filter((row) => !restrictedAreas || !row.business_area_id || restrictedAreas.has(row.business_area_id)),
+    projects: (projects.data ?? []) as Project[], // Visibilità globale delle commesse
     activities: ((activities.data ?? []) as ActivityCategory[]).filter((row) => !restrictedAreas || !row.business_area_id || restrictedAreas.has(row.business_area_id)),
     costCenters: ((costCenters.data ?? []) as CostCenter[]).filter((row) => !restrictedAreas || !row.business_area_id || restrictedAreas.has(row.business_area_id)),
     tariffProfiles: (tariffProfiles.data ?? []) as TariffProfile[],

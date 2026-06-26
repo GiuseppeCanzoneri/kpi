@@ -132,7 +132,7 @@ export default function Timesheet() {
     setLocations((locationsRes.data ?? []) as LocationRow[]);
     setAreas(((areasRes.data ?? []) as BusinessArea[]).filter((area) => isSuperAdmin || areaIds.includes(area.id)));
     setEmployees(visibleEmployees);
-    setProjects(((projectsRes.data ?? []) as Project[]).filter((p) => isSuperAdmin || !p.business_area_id || areaIds.includes(p.business_area_id)));
+    setProjects((projectsRes.data ?? []) as Project[]); // Commesse globali
     setActivities(((activitiesRes.data ?? []) as ActivityCategory[]).filter((a) => isSuperAdmin || !a.business_area_id || areaIds.includes(a.business_area_id)));
     setCostCenters(((costCentersRes.data ?? []) as CostCenter[]).filter((c) => isSuperAdmin || !c.business_area_id || areaIds.includes(c.business_area_id)));
   }, [areaIds, isAdminArea, isSuperAdmin, user?.email]);
@@ -174,13 +174,12 @@ export default function Timesheet() {
   }, [loadAll]);
 
   const filteredProjects = useMemo(() => {
-    if (!form?.beneficiary_company_id && !form?.business_area_id) return projects;
+    // Rimosso il filtro per area per permettere la visibilità globale delle commesse
+    if (!form?.beneficiary_company_id) return projects;
     return projects.filter((p) => {
-      const companyOk = !form?.beneficiary_company_id || p.company_id === form.beneficiary_company_id || !p.company_id;
-      const areaOk = !form?.business_area_id || !p.business_area_id || p.business_area_id === form.business_area_id;
-      return companyOk && areaOk;
+      return p.company_id === form.beneficiary_company_id || !p.company_id;
     });
-  }, [projects, form?.beneficiary_company_id, form?.business_area_id]);
+  }, [projects, form?.beneficiary_company_id]);
 
   const filteredActivities = useMemo(() => {
     if (!form?.business_area_id) return activities;
