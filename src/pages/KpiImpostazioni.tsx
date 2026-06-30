@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calculator, RefreshCw, Save, Settings2, SlidersHorizontal, Target } from "lucide-react";
+import { Calculator, RefreshCw, Save, Target } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { supabase } from "../integrations/supabase/client";
 
