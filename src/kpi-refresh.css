@@ -2977,3 +2977,96 @@ body {
     text-align: left;
   }
 }
+
+
+/* === KPI OPERATIVO + PDF PREVIEW + POPUP DATI MANCANTI === */
+.quantum-page { display: grid; gap: 20px; }
+.quantum-toolbar {
+  display: flex; align-items: end; gap: 14px; flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: 22px; padding: 16px;
+  background: rgba(255,255,255,.92); box-shadow: var(--shadow-soft);
+}
+.quantum-toolbar label { display: grid; gap: 6px; min-width: 160px; color: var(--muted); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+.quantum-toolbar-summary { margin-left: auto; color: var(--muted); font-weight: 750; }
+.quantum-toolbar-summary strong { color: var(--primary); }
+.quantum-hero-grid { display: grid; grid-template-columns: 320px 320px minmax(0, 1fr); gap: 18px; align-items: stretch; }
+.quantum-winner-card, .quantum-kpi-board, .quantum-panel, .metric-info-modal, .missing-fields-modal, .pdf-preview-modal {
+  border: 1px solid #d7e4ef; border-radius: 26px; background: rgba(255,255,255,.94); box-shadow: var(--shadow-soft);
+}
+.quantum-winner-card { padding: 22px; display: grid; gap: 10px; align-content: start; }
+.quantum-winner-card h3 { margin: 0; font-size: 24px; letter-spacing: -.04em; }
+.quantum-winner-card p { margin: 0; color: var(--muted); line-height: 1.45; }
+.quantum-avatar { width: 86px; height: 86px; border-radius: 28px; background: linear-gradient(135deg,#eaf3ff,#dcecf8); color: var(--primary); display: grid; place-items: center; font-size: 38px; font-weight: 950; overflow: hidden; }
+.quantum-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.big-number { font-size: 38px; font-weight: 950; color: var(--primary); letter-spacing: -.05em; }
+.quantum-kpi-board { padding: 18px; display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; }
+.quantum-kpi-mini { position: relative; border: 1px solid var(--line); border-radius: 20px; padding: 16px; background: #fff; display: grid; gap: 5px; min-width: 0; }
+.quantum-kpi-mini span { color: var(--primary-2); font-weight: 900; font-size: 12px; letter-spacing: .08em; }
+.quantum-kpi-mini strong { font-size: 14px; line-height: 1.15; }
+.quantum-kpi-mini b { font-size: 28px; letter-spacing: -.05em; }
+.quantum-kpi-mini small { color: var(--muted); }
+.info-dot { position: absolute; top: 10px; right: 10px; border: 0; width: 28px; height: 28px; border-radius: 999px; background: #eef7ff; color: var(--primary); display: grid; place-items: center; cursor: pointer; }
+.info-dot:hover { background: var(--primary); color: #fff; }
+.quantum-layout-two, .direction-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+.direction-grid { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); }
+.quantum-panel { padding: 22px; }
+.quantum-panel-head { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 18px; }
+.quantum-panel-head h3 { margin: 2px 0 4px; font-size: 24px; letter-spacing: -.04em; }
+.quantum-panel-head p { margin: 0; color: var(--muted); }
+.metric-info-modal { width: min(720px, calc(100vw - 32px)); padding: 28px; }
+.metric-info-modal h3 { margin: 6px 0 12px; font-size: 30px; letter-spacing: -.05em; }
+.metric-info-modal p { color: #3e4f64; line-height: 1.6; font-size: 15px; }
+.metric-info-grid, .kpi-detail-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-top: 18px; }
+.metric-info-grid span, .kpi-detail-grid span { border: 1px solid var(--line); border-radius: 16px; padding: 12px; color: var(--muted); background: #f8fbff; }
+.metric-info-grid strong, .kpi-detail-grid strong { display: block; color: var(--primary); margin-top: 4px; font-size: 20px; }
+.pdf-preview-backdrop { padding: 18px; }
+.pdf-preview-modal { width: min(1180px, calc(100vw - 36px)); height: min(88vh, 900px); display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+.pdf-preview-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; padding: 18px 20px; border-bottom: 1px solid var(--line); background: #fff; }
+.pdf-preview-header h3 { margin: 4px 0 2px; font-size: 22px; }
+.pdf-preview-frame { width: 100%; height: 100%; border: 0; background: #f3f6fa; }
+.missing-fields-modal { width: min(620px, calc(100vw - 32px)); padding: 22px; display: grid; grid-template-columns: 54px 1fr; gap: 16px; }
+.missing-fields-icon { width: 54px; height: 54px; border-radius: 18px; display: grid; place-items: center; background: #fff4dc; color: #ad6800; }
+.missing-fields-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.missing-fields-head h3 { margin: 4px 0; font-size: 26px; }
+.missing-fields-content p { margin: 4px 0 12px; color: var(--muted); }
+.missing-fields-content ul { margin: 0; padding-left: 18px; color: var(--text); font-weight: 750; }
+.metric-config-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 14px; }
+.metric-config-card { border: 1px solid var(--line); border-radius: 22px; padding: 16px; background: #fff; display: grid; gap: 12px; }
+.metric-config-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.metric-config-head strong { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 16px; background: var(--primary); color: #fff; }
+.metric-config-card label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 900; }
+.metric-config-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.target-list { display: grid; gap: 10px; }
+.target-row { display: grid; grid-template-columns: minmax(210px,1.2fr) repeat(5,minmax(105px,1fr)) auto; gap: 10px; align-items: end; padding: 12px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.target-title { display: flex; align-items: center; gap: 10px; color: var(--primary); }
+.target-title span { display: block; color: var(--muted); font-size: 12px; }
+.segmented { display: inline-flex; gap: 4px; padding: 5px; border: 1px solid var(--line); border-radius: 999px; background: #f4f7fb; }
+.segmented button { border: 0; border-radius: 999px; padding: 8px 12px; background: transparent; font-weight: 850; cursor: pointer; }
+.segmented button.active { background: var(--primary); color: #fff; }
+.validation-command-panel { border: 1px solid var(--line); border-radius: 24px; padding: 16px; background: #fff; box-shadow: var(--shadow-soft); display: grid; gap: 14px; }
+.validation-filters { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
+.validation-filters label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 900; }
+.validation-actions-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.validation-list { display: grid; gap: 12px; }
+.validation-row-card { display: grid; grid-template-columns: 28px 82px minmax(0,1fr) 220px auto; gap: 14px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 22px; background: #fff; box-shadow: var(--shadow-soft); }
+.validation-row-card.open { border-left: 5px solid #c69a45; }
+.validation-row-card.validated { border-left: 5px solid var(--success); }
+.validation-date { display: grid; gap: 4px; text-align: center; padding: 10px; border-radius: 16px; background: #f5f8fc; }
+.validation-main h3 { margin: 0 0 4px; }
+.validation-main p, .validation-main small { margin: 0; color: var(--muted); }
+.validation-status { display: grid; gap: 5px; }
+.top-group-card { border: 1px solid var(--line); border-radius: 20px; padding: 14px; background: #fff; margin-bottom: 12px; }
+.top-group-card h4 { margin: 0 0 10px; }
+.top-person-row { display: grid; grid-template-columns: 46px 1fr auto; gap: 10px; align-items: center; padding: 10px; border-radius: 14px; background: #f8fbff; margin-top: 8px; }
+.top-person-row span { color: var(--primary); font-weight: 900; }
+.top-person-row b { color: var(--primary); }
+@media (max-width: 1280px) {
+  .quantum-hero-grid, .quantum-layout-two, .direction-grid { grid-template-columns: 1fr; }
+  .quantum-kpi-board, .metric-config-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .target-row { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 760px) {
+  .quantum-kpi-board, .metric-config-grid, .validation-filters, .validation-row-card, .target-row, .metric-info-grid, .kpi-detail-grid { grid-template-columns: 1fr; }
+  .quantum-toolbar-summary { margin-left: 0; }
+  .pdf-preview-modal { height: 92vh; }
+}
