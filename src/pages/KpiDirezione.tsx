@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, RefreshCw, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Calculator, Download, RefreshCw, ShieldAlert, Trophy } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
@@ -18,6 +18,10 @@ function monthRange() {
   };
 }
 
+function levelClass(level: string) {
+  return `kpi-level ${String(level || "basso").toLowerCase().replaceAll(" ", "-")}`;
+}
+
 export default function KpiDirezione() {
   const { isSuperAdmin, isAdminArea } = useAuth();
   const canAdmin = isSuperAdmin || isAdminArea;
@@ -28,11 +32,13 @@ export default function KpiDirezione() {
   const [top, setTop] = useState<KpiDashboardRow[]>([]);
   const [anomalies, setAnomalies] = useState<(KpiDashboardRow & { anomaly_reason?: string })[]>([]);
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setMessage(null);
     const [topRes, anomalyRes] = await Promise.all([
       supabase.from("v_kpi_public_top3").select("*").eq("period_type", periodType).eq("period_start", periodStart).eq("period_end", periodEnd).order("nome_gruppo").order("group_rank"),
       supabase.from("v_kpi_anomalies").select("*").eq("period_type", periodType).eq("period_start", periodStart).eq("period_end", periodEnd).order("performance_index", { ascending: true }),
@@ -45,104 +51,143 @@ export default function KpiDirezione() {
     setLoading(false);
   }, [periodEnd, periodStart, periodType]);
 
+  useEffect(() => { void load(); }, [load]);
+
   const calculate = async () => {
     setLoading(true);
-    const { error } = await supabase.rpc("kpi_calculate_period", { p_period_type: periodType, p_period_start: periodStart, p_period_end: periodEnd });
+    setError(null);
+    setMessage(null);
+    const { data, error } = await supabase.rpc("kpi_calculate_period", { p_period_type: periodType, p_period_start: periodStart, p_period_end: periodEnd });
     if (error) setError(error.message);
+    else setMessage(`Calcolo completato per ${data ?? 0} dipendenti.`);
     await load();
     setLoading(false);
   };
-
-  useEffect(() => { void load(); }, [load]);
 
   const stats = useMemo(() => ({
     top: top.length,
     anomalies: anomalies.length,
     low: anomalies.filter((row) => Number(row.performance_index) < 85).length,
     quality: anomalies.filter((row) => Number(row.k4_qualita) < 90).length,
+    notValidated: anomalies.filter((row) => Number(row.validated_rows ?? 0) < Number(row.total_rows ?? 0)).length,
   }), [anomalies, top.length]);
+
+  const topByGroup = useMemo(() => {
+    const map = new Map<string, KpiDashboardRow[]>();
+    top.forEach((row) => {
+      const key = row.nome_gruppo ?? "Altro";
+      map.set(key, [...(map.get(key) ?? []), row]);
+    });
+    return Array.from(map.entries());
+  }, [top]);
 
   if (!canAdmin) {
     return <div className="alert warning">Pannello riservato a Direzione, Super Admin e Admin Area.</div>;
   }
 
   return (
-    <div>
+    <div className="kpi-direction-page quantum-clean-page">
       <PageHeader
         title="Direzione KPI"
-        description="Pannello riservato: anomalie, risorse sotto standard, top performer e PDF direzionale. Non espone pubblicamente i punteggi bassi."
+        description="Pannello riservato: top performer, anomalie e criticità. I punteggi bassi restano privati e non finiscono in bacheca."
         actions={
           <>
             <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
-            <button className="button" onClick={() => void calculate()} disabled={loading}><ShieldAlert size={16} /> Ricalcola</button>
+            <button className="button" onClick={() => void calculate()} disabled={loading}><Calculator size={16} /> Ricalcola</button>
             <button className="button secondary" onClick={() => downloadKpiLeaderboardPdf(top, "Top performer KPI")} disabled={!top.length}><Download size={16} /> PDF Top</button>
           </>
         }
       />
 
-      <div className="filters-bar pro-filters">
-        <label>Tipo periodo
+      {error && <div className="alert error">{error}</div>}
+      {message && <div className="alert success">{message}</div>}
+
+      <section className="direction-hero quantum-hero compact">
+        <div>
+          <span className="eyebrow">Controllo Direzione</span>
+          <h2>{periodType === "MONTH" ? "Mese" : "Settimana"} in verifica</h2>
+          <p>Periodo dal <strong>{periodStart}</strong> al <strong>{periodEnd}</strong>. Prima valida i dati, poi calcola e pubblica solo top performer.</p>
+        </div>
+        <div className="period-box">
           <select className="input" value={periodType} onChange={(e) => setPeriodType(e.target.value as KpiPeriodType)}>
             <option value="WEEK">Settimana</option>
             <option value="MONTH">Mese</option>
           </select>
-        </label>
-        <label>Dal <input className="input" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></label>
-        <label>Al <input className="input" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
-      </div>
-
-      {error && <div className="alert error">{error}</div>}
-      {loading && <div className="loading">Aggiornamento KPI...</div>}
-
-      <div className="kpi-grid small">
-        <div className="kpi-card"><span>Top performer</span><strong>{stats.top}</strong><small>Pubblicabili</small></div>
-        <div className="kpi-card"><span>Anomalie</span><strong>{stats.anomalies}</strong><small>Riservate</small></div>
-        <div className="kpi-card"><span>PI sotto 85</span><strong>{stats.low}</strong><small>Attenzione direzione</small></div>
-        <div className="kpi-card"><span>Qualità sotto soglia</span><strong>{stats.quality}</strong><small>K4 &lt; 90</small></div>
-      </div>
-
-      <section className="kpi-section-card">
-        <div className="section-title"><h3>Top 3 per gruppo omogeneo</h3><button className="button secondary" onClick={() => downloadKpiLeaderboardPdf(top, "Top 3 KPI")}>PDF</button></div>
-        <div className="table-wrap elevated-table">
-          <table className="data-table compact">
-            <thead><tr><th>Rank</th><th>Dipendente</th><th>Gruppo</th><th>PI</th><th>Qualità</th><th>Puntualità</th><th>Badge</th></tr></thead>
-            <tbody>
-              {top.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.group_rank}</td>
-                  <td><strong>{row.employee_name}</strong><br /><span className="muted small-text">{row.employee_email}</span></td>
-                  <td>{row.nome_gruppo}</td>
-                  <td><strong>{fmt(row.performance_index)}</strong></td>
-                  <td>{fmt(row.k4_qualita)}</td>
-                  <td>{fmt(row.k5_puntualita)}</td>
-                  <td>{(row.badges ?? []).map((b) => b.label).join(", ") || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <input className="input" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+          <input className="input" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
         </div>
       </section>
 
-      <section className="kpi-section-card">
-        <div className="section-title"><h3>Anomalie riservate</h3><span className="muted">Non pubblicare in bacheca interna</span></div>
-        <div className="table-wrap elevated-table">
-          <table className="data-table compact">
-            <thead><tr><th>Dipendente</th><th>Gruppo</th><th>PI</th><th>K4</th><th>Righe validate</th><th>Motivo</th></tr></thead>
-            <tbody>
-              {anomalies.map((row) => (
-                <tr key={row.id}>
-                  <td><strong>{row.employee_name}</strong><br /><span className="muted small-text">{row.employee_email}</span></td>
-                  <td>{row.nome_gruppo}</td>
-                  <td>{fmt(row.performance_index)}</td>
-                  <td>{fmt(row.k4_qualita)}</td>
-                  <td>{row.validated_rows}/{row.total_rows}</td>
-                  <td>{row.anomaly_reason ?? row.eligibility_reason ?? "Da verificare"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {loading && <div className="loading-card"><div className="spinner" /> Aggiornamento KPI...</div>}
+
+      <section className="direction-stats-grid">
+        <div><Trophy size={18} /><span>Top performer</span><strong>{stats.top}</strong><small>Pubblicabili</small></div>
+        <div className={stats.anomalies ? "warn" : ""}><ShieldAlert size={18} /><span>Anomalie</span><strong>{stats.anomalies}</strong><small>Riservate</small></div>
+        <div className={stats.low ? "danger" : ""}><AlertTriangle size={18} /><span>PI sotto 85</span><strong>{stats.low}</strong><small>Da verificare</small></div>
+        <div className={stats.quality ? "danger" : ""}><AlertTriangle size={18} /><span>Qualità sotto soglia</span><strong>{stats.quality}</strong><small>K4 &lt; 90</small></div>
+        <div className={stats.notValidated ? "warn" : ""}><AlertTriangle size={18} /><span>Righe non validate</span><strong>{stats.notValidated}</strong><small>Prima del premio</small></div>
       </section>
+
+      <div className="direction-layout">
+        <section className="quantum-panel">
+          <div className="quantum-panel-head">
+            <div>
+              <span className="eyebrow">Bacheca interna</span>
+              <h3>Top 3 per gruppo omogeneo</h3>
+              <p>Mostra solo i migliori per gruppo. Nessuna esposizione dei dipendenti sotto standard.</p>
+            </div>
+            <button className="button secondary" onClick={() => downloadKpiLeaderboardPdf(top, "Top 3 KPI")} disabled={!top.length}>PDF</button>
+          </div>
+
+          <div className="top-groups-grid">
+            {topByGroup.map(([group, people]) => (
+              <div className="top-group-card" key={group}>
+                <h4>{group}</h4>
+                {people.map((row) => (
+                  <div className="top-person" key={row.id}>
+                    <span className="rank-badge">#{row.group_rank}</span>
+                    <div>
+                      <strong>{row.employee_name}</strong>
+                      <small>{row.employee_email}</small>
+                    </div>
+                    <div className="pi-score">{fmt(row.performance_index)}</div>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {!topByGroup.length && <div className="empty-state"><strong>Nessun top performer pubblicabile</strong><p>Calcola il periodo oppure verifica le condizioni di eleggibilità.</p></div>}
+          </div>
+        </section>
+
+        <section className="quantum-panel danger-panel">
+          <div className="quantum-panel-head">
+            <div>
+              <span className="eyebrow">Riservato</span>
+              <h3>Anomalie da gestire</h3>
+              <p>Questa lista resta solo per Direzione/Admin. Serve per piani correttivi e validazioni mancanti.</p>
+            </div>
+          </div>
+
+          <div className="anomaly-list">
+            {anomalies.map((row) => (
+              <article className="anomaly-card" key={row.id}>
+                <div>
+                  <strong>{row.employee_name}</strong>
+                  <span>{row.employee_email}</span>
+                </div>
+                <div className="anomaly-metrics">
+                  <span>PI <strong>{fmt(row.performance_index)}</strong></span>
+                  <span>K4 <strong>{fmt(row.k4_qualita)}</strong></span>
+                  <span>Validate <strong>{row.validated_rows}/{row.total_rows}</strong></span>
+                </div>
+                <p>{row.anomaly_reason ?? row.eligibility_reason ?? "Da verificare"}</p>
+                <span className={levelClass(row.livello)}>{row.livello}</span>
+              </article>
+            ))}
+            {!anomalies.length && <div className="empty-state"><strong>Nessuna anomalia</strong><p>Il periodo risulta pulito rispetto alle soglie configurate.</p></div>}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

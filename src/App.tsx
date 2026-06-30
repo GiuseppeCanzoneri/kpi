@@ -18,6 +18,7 @@ import CentriCosto from "./pages/CentriCosto";
 import KpiPerformance from "./pages/KpiPerformance";
 import KpiValidazione from "./pages/KpiValidazione";
 import KpiDirezione from "./pages/KpiDirezione";
+import KpiImpostazioni from "./pages/KpiImpostazioni";
 
 function ProtectedRoutes() {
   const { user, loading, roles, isSuperAdmin, isAdminArea } = useAuth();
@@ -32,12 +33,13 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/timesheet" element={<Timesheet />} />
-        <Route path="/riepilogo" element={canAdmin ? <Riepilogo /> : <Navigate to="/" replace />} />
-        <Route path="/fatture" element={canAdmin ? <Fatture /> : <Navigate to="/" replace />} />
-        <Route path="/report" element={<Report />} />
         <Route path="/kpi" element={<KpiPerformance />} />
         <Route path="/kpi/validazione" element={canAdmin ? <KpiValidazione /> : <Navigate to="/kpi" replace />} />
         <Route path="/kpi/direzione" element={canAdmin ? <KpiDirezione /> : <Navigate to="/kpi" replace />} />
+        <Route path="/kpi/impostazioni" element={canAdmin ? <KpiImpostazioni /> : <Navigate to="/kpi" replace />} />
+        <Route path="/riepilogo" element={canAdmin ? <Riepilogo /> : <Navigate to="/" replace />} />
+        <Route path="/fatture" element={canAdmin ? <Fatture /> : <Navigate to="/" replace />} />
+        <Route path="/report" element={<Report />} />
         <Route path="/anagrafiche" element={canAdmin ? <Anagrafiche /> : <Navigate to="/" replace />} />
         <Route path="/tariffario" element={isSuperAdmin ? <Tariffario /> : <Navigate to="/" replace />} />
         <Route path="/centri-costo" element={canAdmin ? <CentriCosto /> : <Navigate to="/" replace />} />
