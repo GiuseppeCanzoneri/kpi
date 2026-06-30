@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   BadgeEuro,
   Building2,
+  CalendarDays,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
@@ -22,18 +23,11 @@ import {
 import { PageHeader } from "../components/PageHeader";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
-import type {
-  ActivityCategory,
-  BusinessArea,
-  Company,
-  CostCenter,
-  Employee,
-  LocationRow,
-  Project,
-  TimesheetView,
-} from "../types/db";
+import type { ActivityCategory, BusinessArea, Company, CostCenter, Employee, LocationRow, Project, TimesheetView } from "../types/db";
 import { euro, numberIt, todayInput } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
+import { MissingFieldsModal } from "../components/MissingFieldsModal";
+import { findMissingFields } from "../lib/formValidation";
 import { filterRowsByRole, fullEmployeeName } from "../lib/kpiData";
 
 type FormState = {
@@ -69,31 +63,6 @@ const emptyForm: FormState = {
 
 type ContestFilter = "all" | "clean" | "contested";
 
-type EmployeeGroup = {
-  employeeId: string;
-  employeeName: string;
-  employeeEmail: string;
-  totalOre: number;
-  totalImporto: number;
-  contestedCount: number;
-  rows: TimesheetView[];
-};
-
-type AreaGroup = {
-  areaId: string;
-  areaCode: string;
-  areaName: string;
-  totalOre: number;
-  totalImporto: number;
-  contestedCount: number;
-  employees: EmployeeGroup[];
-};
-
-const uuidOrNull = (value?: string | null) => {
-  const cleaned = String(value ?? "").trim();
-  return cleaned.length > 0 ? cleaned : null;
-};
-
 export default function Timesheet() {
   const { isSuperAdmin, isAdminArea, user, areaIds } = useAuth();
   const canManage = isSuperAdmin || isAdminArea;
@@ -109,31 +78,14 @@ export default function Timesheet() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<ActivityCategory[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
-
-  const [form, setForm] = useState<FormState | null>(() => {
-    try {
-      const saved = localStorage.getItem("kpi_timesheet_draft");
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      localStorage.removeItem("kpi_timesheet_draft");
-      return null;
-    }
-  });
-
+  const [form, setForm] = useState<FormState | null>(null);
   const [search, setSearch] = useState("");
   const [areaFilter, setAreaFilter] = useState("");
   const [contestFilter, setContestFilter] = useState<ContestFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (form) {
-      localStorage.setItem("kpi_timesheet_draft", JSON.stringify(form));
-    } else {
-      localStorage.removeItem("kpi_timesheet_draft");
-    }
-  }, [form]);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
 
   const currentEmployee = useMemo(() => {
     const email = user?.email?.toLowerCase();
@@ -184,7 +136,7 @@ export default function Timesheet() {
     setLocations((locationsRes.data ?? []) as LocationRow[]);
     setAreas(((areasRes.data ?? []) as BusinessArea[]).filter((area) => isSuperAdmin || areaIds.includes(area.id)));
     setEmployees(visibleEmployees);
-    setProjects((projectsRes.data ?? []) as Project[]);
+    setProjects(((projectsRes.data ?? []) as Project[]).filter((p) => isSuperAdmin || !p.business_area_id || areaIds.includes(p.business_area_id)));
     setActivities(((activitiesRes.data ?? []) as ActivityCategory[]).filter((a) => isSuperAdmin || !a.business_area_id || areaIds.includes(a.business_area_id)));
     setCostCenters(((costCentersRes.data ?? []) as CostCenter[]).filter((c) => isSuperAdmin || !c.business_area_id || areaIds.includes(c.business_area_id)));
   }, [areaIds, isAdminArea, isSuperAdmin, user?.email]);
@@ -225,7 +177,14 @@ export default function Timesheet() {
     void loadAll();
   }, [loadAll]);
 
-  const filteredProjects = useMemo(() => projects, [projects]);
+  const filteredProjects = useMemo(() => {
+    if (!form?.beneficiary_company_id && !form?.business_area_id) return projects;
+    return projects.filter((p) => {
+      const companyOk = !form?.beneficiary_company_id || p.company_id === form.beneficiary_company_id || !p.company_id;
+      const areaOk = !form?.business_area_id || !p.business_area_id || p.business_area_id === form.business_area_id;
+      return companyOk && areaOk;
+    });
+  }, [projects, form?.beneficiary_company_id, form?.business_area_id]);
 
   const filteredActivities = useMemo(() => {
     if (!form?.business_area_id) return activities;
@@ -274,70 +233,6 @@ export default function Timesheet() {
     });
   }, [areaFilter, contestFilter, rows, search]);
 
-  const groupedRows = useMemo<AreaGroup[]>(() => {
-    const areaMap = new Map<string, AreaGroup & { employeeMap: Map<string, EmployeeGroup> }>();
-
-    visibleRows.forEach((row) => {
-      const areaId = row.business_area_id || "area-non-definita";
-      const areaCode = row.codice_area || "AREA N.D.";
-      const areaName = row.nome_area || "Area non definita";
-      const ore = Number(row.ore ?? 0);
-      const importo = Number(row.importo_visibile ?? 0);
-
-      if (!areaMap.has(areaId)) {
-        areaMap.set(areaId, {
-          areaId,
-          areaCode,
-          areaName,
-          totalOre: 0,
-          totalImporto: 0,
-          contestedCount: 0,
-          employees: [],
-          employeeMap: new Map<string, EmployeeGroup>(),
-        });
-      }
-
-      const area = areaMap.get(areaId)!;
-      area.totalOre += ore;
-      area.totalImporto += importo;
-      if (row.is_contested) area.contestedCount += 1;
-
-      const employeeId = row.employee_id || row.employee_email || "dipendente-non-definito";
-      const employeeName = row.employee_name || "Dipendente non definito";
-      const employeeEmail = row.employee_email || "";
-
-      if (!area.employeeMap.has(employeeId)) {
-        area.employeeMap.set(employeeId, {
-          employeeId,
-          employeeName,
-          employeeEmail,
-          totalOre: 0,
-          totalImporto: 0,
-          contestedCount: 0,
-          rows: [],
-        });
-      }
-
-      const employee = area.employeeMap.get(employeeId)!;
-      employee.totalOre += ore;
-      employee.totalImporto += importo;
-      if (row.is_contested) employee.contestedCount += 1;
-      employee.rows.push(row);
-    });
-
-    return Array.from(areaMap.values())
-      .map((area) => ({
-        areaId: area.areaId,
-        areaCode: area.areaCode,
-        areaName: area.areaName,
-        totalOre: area.totalOre,
-        totalImporto: area.totalImporto,
-        contestedCount: area.contestedCount,
-        employees: Array.from(area.employeeMap.values()).sort((a, b) => a.employeeName.localeCompare(b.employeeName, "it")),
-      }))
-      .sort((a, b) => `${a.areaCode} ${a.areaName}`.localeCompare(`${b.areaCode} ${b.areaName}`, "it"));
-  }, [visibleRows]);
-
   const applyAreaDefaults = (next: FormState): FormState => {
     const areaCostCenters = costCenters.filter((c) => !next.business_area_id || c.business_area_id === next.business_area_id);
     const areaActivities = activities.filter((a) => !next.business_area_id || a.business_area_id === next.business_area_id);
@@ -359,12 +254,10 @@ export default function Timesheet() {
       location_id: defaultEmployee?.location_id ?? (locations.length === 1 ? locations[0].id : ""),
       beneficiary_company_id: companies.length === 1 ? companies[0].id : "",
     });
-    setError(null);
     setForm(next);
   };
 
   const edit = (row: TimesheetView) => {
-    setError(null);
     setForm({
       id: row.id,
       data: row.data,
@@ -383,7 +276,6 @@ export default function Timesheet() {
   };
 
   const duplicate = (row: TimesheetView) => {
-    setError(null);
     setForm({
       data: row.data,
       employee_id: row.employee_id,
@@ -412,67 +304,86 @@ export default function Timesheet() {
 
   const save = async () => {
     if (!form) return;
-
-    setSaving(true);
     setError(null);
-
-    const requiredFields = [
-      { value: form.data, label: "Data" },
-      { value: form.employee_id, label: "Dipendente" },
-      { value: form.beneficiary_company_id, label: "Società beneficiaria" },
-      { value: form.business_area_id, label: "Area" },
-      { value: form.project_id, label: "Commessa" },
-      { value: form.activity_category_id, label: "Attività" },
-    ];
-
-    const missingFields = requiredFields
-      .filter((field) => !String(field.value ?? "").trim())
-      .map((field) => field.label);
-
-    if (missingFields.length > 0) {
-      setError(`Compila questi campi obbligatori: ${missingFields.join(", ")}.`);
-      setSaving(false);
-      return;
-    }
-
-    if (!form.ore || Number(form.ore) <= 0) {
-      setError("Inserisci un numero di ore maggiore di zero.");
-      setSaving(false);
-      return;
-    }
+    setMissingFields([]);
 
     const employee = employees.find((e) => e.id === form.employee_id);
     if (!employee) {
-      setError("Dipendente non trovato. Verifica che l'utente sia collegato alla tabella dipendenti.");
+      setMissingFields(["Dipendente collegato alla registrazione"]);
+      return;
+    }
+
+    const missing = findMissingFields([
+      { label: "Data", value: form.data },
+      { label: "Dipendente", value: form.employee_id },
+      { label: "Società beneficiaria", value: form.beneficiary_company_id },
+      { label: "Area", value: form.business_area_id },
+      { label: "Commessa", value: form.project_id },
+      { label: "Attività", value: form.activity_category_id },
+      { label: "Ore", value: Number(form.ore) },
+    ]);
+
+    if (!Number.isFinite(Number(form.ore)) || Number(form.ore) <= 0) {
+      missing.push("Ore maggiori di zero");
+    }
+
+    if (missing.length > 0) {
+      setMissingFields([...new Set(missing)]);
+      return;
+    }
+
+    setSaving(true);
+
+    const payload: Record<string, unknown> = {
+      data: form.data,
+      employee_id: form.employee_id,
+      beneficiary_company_id: form.beneficiary_company_id,
+      location_id: form.location_id || null,
+      business_area_id: form.business_area_id,
+      project_id: form.project_id,
+      activity_category_id: form.activity_category_id,
+      cost_center_id: form.cost_center_id || null,
+      ore: Number(form.ore),
+      descrizione: form.descrizione || null,
+      note: form.note || null,
+      stato: "Approvato",
+    };
+
+    if (form.id && canManage) {
+      payload.corrected_by = user?.id ?? null;
+      payload.corrected_at = new Date().toISOString();
+      payload.correction_note = form.correction_note || "Correzione eseguita da area/admin.";
+    }
+
+    if (!payload.employee_id || !payload.beneficiary_company_id || !payload.business_area_id || !payload.project_id || !payload.activity_category_id || !payload.ore) {
+      setMissingFields(["Società beneficiaria", "Area", "Commessa", "Attività", "Ore"]);
       setSaving(false);
       return;
     }
 
-    const { error } = await supabase.rpc("kpi_save_timesheet_entry", {
-      p_entry_id: uuidOrNull(form.id),
-      p_data: form.data,
-      p_employee_id: form.employee_id,
-      p_beneficiary_company_id: form.beneficiary_company_id,
-      p_location_id: uuidOrNull(form.location_id),
-      p_business_area_id: form.business_area_id,
-      p_project_id: form.project_id,
-      p_activity_category_id: form.activity_category_id,
-      p_cost_center_id: uuidOrNull(form.cost_center_id),
-      p_ore: Number(form.ore),
-      p_descrizione: form.descrizione?.trim() || null,
-      p_note: form.note?.trim() || null,
-      p_correction_note: form.correction_note?.trim() || null,
-    });
+    if (!isSuperAdmin && isAdminArea && !areaIds.includes(payload.business_area_id as string)) {
+      setError("Non puoi registrare ore su un'area non assegnata.");
+      setSaving(false);
+      return;
+    }
+
+    if (!isSuperAdmin && !isAdminArea && employee.email.toLowerCase() !== user?.email?.toLowerCase()) {
+      setError("Un USER_AREA può registrare solo le proprie ore.");
+      setSaving(false);
+      return;
+    }
+
+    const { error } = form.id
+      ? await supabase.from("timesheet_entries").update(payload).eq("id", form.id)
+      : await supabase.from("timesheet_entries").insert(payload);
 
     setSaving(false);
-
     if (error) {
       setError(error.message);
       return;
     }
 
     setForm(null);
-    localStorage.removeItem("kpi_timesheet_draft");
     await loadRows();
   };
 
@@ -512,12 +423,6 @@ export default function Timesheet() {
     else await loadRows();
   };
 
-  const clearDraft = () => {
-    localStorage.removeItem("kpi_timesheet_draft");
-    setError(null);
-    setForm(null);
-  };
-
   const canChooseEmployee = isSuperAdmin || isAdminArea;
   const totalOre = visibleRows.reduce((sum, r) => sum + Number(r.ore ?? 0), 0);
   const totalImporto = visibleRows.reduce((sum, r) => sum + Number(r.importo_visibile ?? 0), 0);
@@ -533,7 +438,7 @@ export default function Timesheet() {
     <div className="timesheet-page">
       <PageHeader
         title="Timesheet"
-        description="Registra le ore lavorate. La vista è divisa per area, dipendente e attività svolta."
+        description="Registra le ore lavorate. Ogni riga entra subito nei KPI come Approvato; eventuali contestazioni restano tracciate senza bloccare i calcoli."
         actions={
           <>
             <button className="button secondary" onClick={() => void loadAll()} disabled={loading}>
@@ -550,7 +455,7 @@ export default function Timesheet() {
         <div>
           <span className="eyebrow">Periodo selezionato</span>
           <h2>{capitalize(monthLabel)}</h2>
-          <p>Riepilogo operativo delle attività svolte, organizzato per aree e dipendenti.</p>
+          <p>Vista operativa delle ore approvate, con ricerca rapida per dipendente, commessa, attività o descrizione.</p>
         </div>
         <div className="timesheet-hero-status">
           <ClipboardCheck size={18} />
@@ -561,7 +466,6 @@ export default function Timesheet() {
 
       <div className="ts-stat-grid">
         <StatCard icon={<FileText size={18} />} label="Righe visualizzate" value={numberIt(visibleRows.length)} hint={`${rows.length} totali nel mese`} />
-        <StatCard icon={<Layers3 size={18} />} label="Aree coinvolte" value={numberIt(groupedRows.length)} hint="Divisione per area" />
         <StatCard icon={<Clock3 size={18} />} label="Ore caricate" value={numberIt(totalOre)} hint="Somma filtri attivi" />
         <StatCard icon={<UserRound size={18} />} label="Dipendenti" value={numberIt(activeEmployees)} hint="Persone coinvolte" />
         <StatCard icon={<BadgeEuro size={18} />} label="Valore" value={euro(totalImporto)} hint="Importo visibile" />
@@ -572,9 +476,9 @@ export default function Timesheet() {
         <div className="ts-filter-main">
           <label className="ts-search-field">
             <Search size={16} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca dipendente, area, commessa, attività o descrizione..." />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca dipendente, commessa, attività, descrizione..." />
             {search && (
-              <button type="button" onClick={() => setSearch("")}>
+              <button type="button" onClick={() => setSearch("")} aria-label="Pulisci ricerca">
                 <X size={14} />
               </button>
             )}
@@ -610,147 +514,87 @@ export default function Timesheet() {
         </div>
       )}
 
+      {!currentEmployee && !isSuperAdmin && !isAdminArea && (
+        <div className="alert warning">La tua email non è ancora collegata a un dipendente. Chiedi al Super Admin di assegnarti il ruolo in “Accessi e ruoli”.</div>
+      )}
+
       {loading && <div className="loading ts-loading">Caricamento timesheet...</div>}
 
       {visibleRows.length === 0 ? (
-        <EmptyState title="Nessuna ora trovata" text="Modifica i filtri oppure crea una nuova registrazione." />
+        <EmptyState title="Nessuna ora trovata" text="Modifica i filtri oppure crea una nuova registrazione. Ogni nuova riga verrà salvata direttamente come Approvato." />
       ) : (
-        <section className="timesheet-grouped-list">
-          {groupedRows.map((area) => (
-            <section key={area.areaId} className="ts-area-group">
-              <div className="ts-area-header">
-                <div>
-                  <span className="eyebrow">Area</span>
-                  <h3>
-                    {area.areaCode} · {area.areaName}
-                  </h3>
-                </div>
-                <div className="ts-area-summary">
-                  <Metric label="Ore area" value={numberIt(area.totalOre)} />
-                  <Metric label="Valore" value={euro(area.totalImporto)} />
-                  <Metric label="Dipendenti" value={numberIt(area.employees.length)} />
-                  {area.contestedCount > 0 && <span className="status-pill da-correggere">{area.contestedCount} contestate</span>}
-                </div>
-              </div>
+        <section className="timesheet-list" aria-label="Righe timesheet">
+          {visibleRows.map((row) => {
+            const dateParts = formatDateParts(row.data);
+            return (
+              <article key={row.id} className={`timesheet-entry-card ${row.is_contested ? "is-contested" : ""}`}>
+                <div className="ts-card-main">
+                  <div className="ts-date-block">
+                    <strong>{dateParts.day}</strong>
+                    <span>{dateParts.month}</span>
+                    <small>{dateParts.year}</small>
+                  </div>
 
-              <div className="ts-employee-groups">
-                {area.employees.map((employee) => (
-                  <section key={employee.employeeId} className="ts-employee-group">
-                    <div className="ts-employee-header">
-                      <div className="ts-employee-title">
-                        <UserRound size={18} />
-                        <div>
-                          <h4>{employee.employeeName}</h4>
-                          {employee.employeeEmail && <span>{employee.employeeEmail}</span>}
-                        </div>
+                  <div className="ts-entry-body">
+                    <div className="ts-entry-topline">
+                      <div>
+                        <span className="eyebrow">{row.employee_email}</span>
+                        <h3>{row.employee_name}</h3>
                       </div>
-                      <div className="ts-employee-summary">
-                        <Metric label="Ore" value={numberIt(employee.totalOre)} />
-                        <Metric label="Attività" value={numberIt(employee.rows.length)} />
-                        <Metric label="Valore" value={euro(employee.totalImporto)} />
+                      <div className="ts-status-stack">
+                        <span className="status-pill approvato">Approvato</span>
+                        {row.is_contested && <span className="status-pill da-correggere">Contestata</span>}
                       </div>
                     </div>
 
-                    <div className="timesheet-list">
-                      {employee.rows.map((row) => {
-                        const dateParts = formatDateParts(row.data);
-                        return (
-                          <article key={row.id} className={`timesheet-entry-card ${row.is_contested ? "is-contested" : ""}`}>
-                            <div className="ts-card-main">
-                              <div className="ts-date-block">
-                                <strong>{dateParts.day}</strong>
-                                <span>{dateParts.month}</span>
-                                <small>{dateParts.year}</small>
-                              </div>
-                              <div className="ts-entry-body">
-                                <div className="ts-entry-topline">
-                                  <div>
-                                    <span className="eyebrow">Attività svolta</span>
-                                    <h3>
-                                      {row.codice_attivita ? `${row.codice_attivita} · ` : ""}
-                                      {row.nome_categoria || "Attività non definita"}
-                                    </h3>
-                                  </div>
-                                  <div className="ts-status-stack">
-                                    <span className="status-pill approvato">Approvato</span>
-                                    {row.is_contested && <span className="status-pill da-correggere">Contestata</span>}
-                                  </div>
-                                </div>
-
-                                <div className="ts-activity-focus">
-                                  <span>Descrizione lavoro svolto</span>
-                                  <p>{row.descrizione || "Nessuna descrizione inserita."}</p>
-                                </div>
-
-                                <div className="ts-flow">
-                                  <div>
-                                    <span>Da società</span>
-                                    <strong>{row.employer_company_code ?? "—"}</strong>
-                                    <small>{row.employer_company_name ?? ""}</small>
-                                  </div>
-                                  <div className="ts-flow-arrow">→</div>
-                                  <div>
-                                    <span>A società</span>
-                                    <strong>{row.beneficiary_company_code ?? "—"}</strong>
-                                    <small>{row.beneficiary_company_name ?? ""}</small>
-                                  </div>
-                                </div>
-
-                                <div className="ts-tags">
-                                  <span>
-                                    <Layers3 size={13} /> {row.codice_area ?? "Area n.d."}
-                                  </span>
-                                  <span>{row.codice_centro_costo ?? "Centro costo n.d."}</span>
-                                  <span>{row.codice_commessa ?? "Commessa n.d."}</span>
-                                  <span>{row.descrizione_commessa ?? "Descrizione commessa n.d."}</span>
-                                </div>
-
-                                {(row.note || row.is_contested) && (
-                                  <div className="ts-description-block">
-                                    {row.note && <small>Note: {row.note}</small>}
-                                    {row.is_contested && <small className="contest-note">Contestazione: {row.contest_reason || "Da verificare"}</small>}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <aside className="ts-card-side">
-                              <Metric label="Ore" value={numberIt(row.ore)} />
-                              <Metric label="Ore pesate" value={numberIt(row.ore_pesate)} />
-                              <Metric label="Importo" value={row.importo_visibile == null ? "Riservato" : euro(row.importo_visibile)} />
-                              <div className="row-actions ts-actions">
-                                <button className="icon-button" onClick={() => edit(row)} title="Modifica">
-                                  <Edit3 size={15} />
-                                </button>
-                                <button className="icon-button" onClick={() => duplicate(row)} title="Duplica">
-                                  <Copy size={15} />
-                                </button>
-                                {canManage && !row.is_contested && (
-                                  <button className="icon-button warning" onClick={() => void contest(row)} title="Contesta">
-                                    <XCircle size={15} />
-                                  </button>
-                                )}
-                                {canManage && row.is_contested && (
-                                  <button className="icon-button success" onClick={() => void clearContest(row)} title="Chiudi contestazione">
-                                    <CheckCircle2 size={15} />
-                                  </button>
-                                )}
-                                {(canManage || row.employee_email?.toLowerCase() === user?.email?.toLowerCase()) && (
-                                  <button className="icon-button danger" onClick={() => void remove(row)} title="Elimina">
-                                    <Trash2 size={15} />
-                                  </button>
-                                )}
-                              </div>
-                            </aside>
-                          </article>
-                        );
-                      })}
+                    <div className="ts-flow">
+                      <div>
+                        <span>Da società</span>
+                        <strong>{row.employer_company_code ?? "—"}</strong>
+                        <small>{row.employer_company_name ?? ""}</small>
+                      </div>
+                      <div className="ts-flow-arrow">→</div>
+                      <div>
+                        <span>A società</span>
+                        <strong>{row.beneficiary_company_code ?? "—"}</strong>
+                        <small>{row.beneficiary_company_name ?? ""}</small>
+                      </div>
                     </div>
-                  </section>
-                ))}
-              </div>
-            </section>
-          ))}
+
+                    <div className="ts-tags">
+                      <span><Layers3 size={13} /> {row.codice_area ?? "Area n.d."}</span>
+                      <span>{row.codice_centro_costo ?? "Centro costo n.d."}</span>
+                      <span>{row.codice_commessa ?? "Commessa n.d."}</span>
+                      <span>{row.codice_attivita ?? "Attività n.d."}</span>
+                    </div>
+
+                    <div className="ts-description-block">
+                      <span>Descrizione lavoro svolto</span>
+                      <p>{row.descrizione || "Nessuna descrizione inserita."}</p>
+                      {row.note && <small>Note: {row.note}</small>}
+                      {row.is_contested && <small className="contest-note">Contestazione: {row.contest_reason || "Da verificare"}</small>}
+                    </div>
+                  </div>
+                </div>
+
+                <aside className="ts-card-side">
+                  <Metric label="Ore" value={numberIt(row.ore)} />
+                  <Metric label="Ore pesate" value={numberIt(row.ore_pesate)} />
+                  <Metric label="Importo" value={row.importo_visibile == null ? "Riservato" : euro(row.importo_visibile)} />
+
+                  <div className="row-actions ts-actions">
+                    <button className="icon-button" onClick={() => edit(row)} title="Modifica"><Edit3 size={15} /></button>
+                    <button className="icon-button" onClick={() => duplicate(row)} title="Duplica"><Copy size={15} /></button>
+                    {canManage && !row.is_contested && <button className="icon-button warning" onClick={() => void contest(row)} title="Contesta"><XCircle size={15} /></button>}
+                    {canManage && row.is_contested && <button className="icon-button success" onClick={() => void clearContest(row)} title="Chiudi contestazione"><CheckCircle2 size={15} /></button>}
+                    {(canManage || row.employee_email?.toLowerCase() === user?.email?.toLowerCase()) && (
+                      <button className="icon-button danger" onClick={() => void remove(row)} title="Elimina"><Trash2 size={15} /></button>
+                    )}
+                  </div>
+                </aside>
+              </article>
+            );
+          })}
         </section>
       )}
 
@@ -761,10 +605,9 @@ export default function Timesheet() {
               <div>
                 <span className="eyebrow">Timesheet</span>
                 <h3>{form.id ? "Modifica registrazione" : "Nuova registrazione ore"}</h3>
+                <p className="muted">Le ore vengono salvate sempre come <strong>Approvato</strong>. La contestazione è un controllo successivo.</p>
               </div>
-              <button className="icon-button" onClick={() => setForm(null)}>
-                <X size={18} />
-              </button>
+              <button className="icon-button" onClick={() => setForm(null)} aria-label="Chiudi"><X size={18} /></button>
             </div>
 
             <div className="ts-flow-preview">
@@ -772,16 +615,18 @@ export default function Timesheet() {
                 <Building2 size={18} />
                 <span>Società datrice</span>
                 <strong>{formEmployerCompany?.codice_societa ?? "Da dipendente"}</strong>
-                <small>{formEmployerCompany?.ragione_sociale ?? ""}</small>
+                <small>{formEmployerCompany?.ragione_sociale ?? "Seleziona un dipendente per calcolarla"}</small>
               </div>
               <div className="ts-flow-preview-arrow">→</div>
               <div>
                 <Building2 size={18} />
                 <span>Società beneficiaria</span>
                 <strong>{formBeneficiaryCompany?.codice_societa ?? "Da selezionare"}</strong>
-                <small>{formBeneficiaryCompany?.ragione_sociale ?? ""}</small>
+                <small>{formBeneficiaryCompany?.ragione_sociale ?? "Scegli dove imputare il lavoro"}</small>
               </div>
-              <div className={`ts-flow-type ${formIsIntercompany ? "intercompany" : "internal"}`}>{formIsIntercompany ? "Infragruppo" : "Interno"}</div>
+              <div className={`ts-flow-type ${formIsIntercompany ? "intercompany" : "internal"}`}>
+                {formIsIntercompany ? "Infragruppo" : "Interno"}
+              </div>
             </div>
 
             <div className="ts-form-sections">
@@ -790,32 +635,18 @@ export default function Timesheet() {
                   <UserRound size={18} />
                   <div>
                     <h4>1. Chi ha lavorato</h4>
+                    <p>Dipendente, data e sede operativa.</p>
                   </div>
                 </div>
                 <div className="form-grid refined">
-                  <label>
-                    Data *
-                    <input className="input" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} />
-                  </label>
+                  <label>Data *<input className="input" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} /></label>
                   {canChooseEmployee ? (
-                    <label>
-                      Dipendente *
-                      <Select value={form.employee_id} onChange={handleEmployeeChange} options={employees.map((e) => ({ value: e.id, label: `${fullEmployeeName(e)} · ${e.email}` }))} />
-                    </label>
+                    <label>Dipendente *<Select value={form.employee_id} onChange={handleEmployeeChange} options={employees.map((e) => ({ value: e.id, label: `${fullEmployeeName(e)} · ${e.email}` }))} /></label>
                   ) : (
-                    <label>
-                      Dipendente
-                      <input className="input" value={currentEmployee ? `${fullEmployeeName(currentEmployee)} · ${currentEmployee.email}` : "Dipendente non collegato"} disabled />
-                    </label>
+                    <label>Dipendente<input className="input" value={currentEmployee ? `${fullEmployeeName(currentEmployee)} · ${currentEmployee.email}` : "Dipendente non collegato"} disabled /></label>
                   )}
-                  <label>
-                    Sede
-                    <Select value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} options={locations.map((l) => ({ value: l.id, label: l.nome_sede }))} />
-                  </label>
-                  <label>
-                    Ore *
-                    <input className="input" type="number" min="0.25" step="0.25" value={form.ore} onChange={(e) => setForm({ ...form, ore: Number(e.target.value) })} />
-                  </label>
+                  <label>Sede<Select value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} placeholder="Sede non obbligatoria" options={locations.map((l) => ({ value: l.id, label: l.nome_sede }))} /></label>
+                  <label>Ore *<input className="input" type="number" min="0.25" step="0.25" value={form.ore} onChange={(e) => setForm({ ...form, ore: Number(e.target.value) })} /></label>
                 </div>
               </section>
 
@@ -824,33 +655,14 @@ export default function Timesheet() {
                   <Layers3 size={18} />
                   <div>
                     <h4>2. Dove imputare le ore</h4>
+                    <p>Società beneficiaria, area, centro costo e commessa.</p>
                   </div>
                 </div>
                 <div className="form-grid refined">
-                  <label>
-                    Società beneficiaria *
-                    <Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: `${c.codice_societa} · ${c.ragione_sociale}` }))} />
-                  </label>
-                  <label>
-                    Area *
-                    <Select
-                      value={form.business_area_id}
-                      onChange={(v) =>
-                        setForm((prev) =>
-                          prev ? applyAreaDefaults({ ...prev, business_area_id: v, activity_category_id: "", cost_center_id: "", project_id: "" }) : prev
-                        )
-                      }
-                      options={areas.map((a) => ({ value: a.id, label: `${a.codice_area} · ${a.nome_area}` }))}
-                    />
-                  </label>
-                  <label>
-                    Centro costo
-                    <Select value={form.cost_center_id} onChange={(v) => setForm({ ...form, cost_center_id: v })} options={filteredCostCenters.map((c) => ({ value: c.id, label: `${c.codice_centro_costo} · ${c.nome_centro_costo}` }))} />
-                  </label>
-                  <label>
-                    Commessa *
-                    <Select value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })} options={filteredProjects.map((p) => ({ value: p.id, label: `${p.codice_commessa} · ${p.descrizione_commessa}` }))} />
-                  </label>
+                  <label>Società beneficiaria *<Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: `${c.codice_societa} · ${c.ragione_sociale}` }))} /></label>
+                  <label>Area *<Select value={form.business_area_id} onChange={(v) => setForm((prev) => prev ? applyAreaDefaults({ ...prev, business_area_id: v, activity_category_id: "", cost_center_id: "", project_id: "" }) : prev)} options={areas.map((a) => ({ value: a.id, label: `${a.codice_area} · ${a.nome_area}` }))} /></label>
+                  <label>Centro costo<Select value={form.cost_center_id} onChange={(v) => setForm({ ...form, cost_center_id: v })} placeholder="Centro costo facoltativo" options={filteredCostCenters.map((c) => ({ value: c.id, label: `${c.codice_centro_costo} · ${c.nome_centro_costo}` }))} /></label>
+                  <label>Commessa *<Select value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })} options={filteredProjects.map((p) => ({ value: p.id, label: `${p.codice_commessa} · ${p.descrizione_commessa}` }))} /></label>
                 </div>
               </section>
 
@@ -858,36 +670,22 @@ export default function Timesheet() {
                 <div className="ts-section-head">
                   <FileText size={18} />
                   <div>
-                    <h4>3. Attività svolta</h4>
+                    <h4>3. Cosa è stato fatto</h4>
+                    <p>Attività, descrizione operativa e note.</p>
                   </div>
                 </div>
                 <div className="form-grid refined">
-                  <label>
-                    Tipo attività *
-                    <Select value={form.activity_category_id} onChange={(v) => setForm({ ...form, activity_category_id: v })} options={filteredActivities.map((a) => ({ value: a.id, label: `${a.codice_attivita} · ${a.nome_categoria}` }))} />
-                  </label>
-                  <label className="full">
-                    Descrizione chiara del lavoro svolto
-                    <textarea className="input textarea-large" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} placeholder="Esempio: predisposizione elaborati, verifica documentale, sopralluogo, coordinamento tecnico..." />
-                  </label>
-                  <label className="full">
-                    Note interne
-                    <textarea className="input" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-                  </label>
-                  {form.id && canManage && (
-                    <label className="full">
-                      Nota correzione
-                      <textarea className="input" value={form.correction_note} onChange={(e) => setForm({ ...form, correction_note: e.target.value })} />
-                    </label>
-                  )}
+                  <label>Attività *<Select value={form.activity_category_id} onChange={(v) => setForm({ ...form, activity_category_id: v })} options={filteredActivities.map((a) => ({ value: a.id, label: `${a.codice_attivita} · ${a.nome_categoria}` }))} /></label>
+                  <label>Stato<input className="input" value="Approvato automatico" disabled /></label>
+                  <label className="full">Descrizione lavoro svolto<textarea className="input textarea-large" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} placeholder="Esempio: redazione relazione tecnica, aggiornamento portale KPI, verifica computo, sopralluogo..." /></label>
+                  <label className="full">Note<textarea className="input" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Note interne facoltative" /></label>
+                  {form.id && canManage && <label className="full">Nota correzione<textarea className="input" value={form.correction_note} onChange={(e) => setForm({ ...form, correction_note: e.target.value })} placeholder="Motivo della modifica o correzione" /></label>}
                 </div>
               </section>
             </div>
 
             <div className="modal-actions ts-modal-actions">
-              <button className="button secondary" onClick={clearDraft}>
-                Annulla
-              </button>
+              <button className="button secondary" onClick={() => setForm(null)}>Annulla</button>
               <button className="button" onClick={() => void save()} disabled={saving}>
                 <Save size={16} /> {saving ? "Salvataggio..." : "Salva ore approvate"}
               </button>
@@ -895,23 +693,19 @@ export default function Timesheet() {
           </div>
         </div>
       )}
+
+      {missingFields.length > 0 && (
+        <MissingFieldsModal
+          title="Registrazione incompleta"
+          fields={missingFields}
+          onClose={() => setMissingFields([])}
+        />
+      )}
     </div>
   );
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  hint,
-  tone = "default",
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint: string;
-  tone?: "default" | "warning" | "success";
-}) {
+function StatCard({ icon, label, value, hint, tone = "default" }: { icon: React.ReactNode; label: string; value: string; hint: string; tone?: "default" | "warning" | "success" }) {
   return (
     <div className={`ts-stat-card ${tone}`}>
       <div className="ts-stat-icon">{icon}</div>
@@ -931,25 +725,11 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Select({
-  value,
-  onChange,
-  options,
-  placeholder = "Seleziona",
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-}) {
+function Select({ value, onChange, options, placeholder = "Seleziona" }: { value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
   return (
     <select className="input" value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
       <option value="">{placeholder}</option>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
 }

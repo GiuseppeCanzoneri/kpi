@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import * as autoTableModule from "jspdf-autotable";
 import type { KpiDashboardRow, KpiTraceRow } from "../types/kpi";
 import { downloadPdf, safeFilename } from "./pdfPreview";
 
@@ -7,6 +7,15 @@ declare module "jspdf" {
   interface jsPDF {
     lastAutoTable?: { finalY?: number };
   }
+}
+
+
+function runAutoTable(doc: jsPDF, options: Record<string, unknown>) {
+  const fn = (autoTableModule as any).default ?? (autoTableModule as any).autoTable;
+  if (typeof fn !== "function") {
+    throw new Error("jspdf-autotable non è stato caricato correttamente. Controlla la versione installata.");
+  }
+  return fn(doc, options);
 }
 
 function fmt(value: unknown) {
@@ -76,7 +85,7 @@ export function createKpiIndividualPdf(row: KpiDashboardRow, trace: KpiTraceRow[
     { label: "Righe validate", value: `${safe(row.validated_rows)}/${safe(row.total_rows)}` },
   ]);
 
-  autoTable(doc, {
+  runAutoTable(doc, {
     startY: y,
     margin: { left: 12, right: 12 },
     head: [["KPI", "Nome", "Valore", "Lettura"]],
@@ -100,7 +109,7 @@ export function createKpiIndividualPdf(row: KpiDashboardRow, trace: KpiTraceRow[
   doc.text(doc.splitTextToSize(row.eligibility_reason || (row.eligible ? "Idoneo al riconoscimento Top performer." : "Non idoneo al riconoscimento nel periodo."), 270), 12, y + 6);
 
   y += 22;
-  autoTable(doc, {
+  runAutoTable(doc, {
     startY: y,
     margin: { left: 12, right: 12 },
     head: [["Data", "Commessa", "Attività", "Ore", "Std", "Qualità", "Scadenza", "Descrizione / note"]],
@@ -131,7 +140,7 @@ export function createKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classi
     { label: "Scala", value: "0-100" },
   ], 30);
 
-  autoTable(doc, {
+  runAutoTable(doc, {
     startY: 58,
     margin: { left: 12, right: 12 },
     head: [["Rank", "Dipendente", "Gruppo", "PI", "K1", "K2", "K3", "K4", "K5", "Riconoscimento"]],

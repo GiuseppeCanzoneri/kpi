@@ -3070,3 +3070,262 @@ body {
   .quantum-toolbar-summary { margin-left: 0; }
   .pdf-preview-modal { height: 92vh; }
 }
+
+
+/* =========================================================
+   FIX PDF PREVIEW + KPI CARDS + VALIDAZIONE + TIMESHEET POPUP
+   Incollare in fondo a src/kpi-refresh.css
+   ========================================================= */
+
+/* 1) KPI Performance: le card K1-K5 non devono schiacciarsi o sovrapporsi */
+.quantum-kpi-board {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important;
+  gap: 18px !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  overflow: visible !important;
+}
+
+.quantum-kpi-mini {
+  min-width: 0 !important;
+  width: 100% !important;
+  min-height: 230px !important;
+  padding: 20px !important;
+  border-radius: 28px !important;
+  border: 1px solid #d4e2f0 !important;
+  background:
+    radial-gradient(circle at 80% 18%, rgba(29, 93, 145, .10), transparent 26%),
+    #ffffff !important;
+  box-shadow: 0 16px 36px rgba(15, 39, 70, .08) !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(48px, auto) 1fr auto !important;
+  gap: 12px !important;
+  overflow: hidden !important;
+}
+
+.quantum-kpi-mini > span {
+  color: #155386 !important;
+  font-size: 13px !important;
+  font-weight: 950 !important;
+  letter-spacing: .10em !important;
+  text-transform: uppercase !important;
+}
+
+.quantum-kpi-mini > strong {
+  color: #111b2f !important;
+  font-size: clamp(18px, 1.45vw, 25px) !important;
+  line-height: 1.12 !important;
+  letter-spacing: -.035em !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+
+.quantum-kpi-mini > b {
+  color: #111b2f !important;
+  font-size: clamp(38px, 3.8vw, 58px) !important;
+  line-height: .95 !important;
+  letter-spacing: -.06em !important;
+  white-space: nowrap !important;
+}
+
+.quantum-kpi-mini > small {
+  color: #66758c !important;
+  font-size: 15px !important;
+  line-height: 1.25 !important;
+}
+
+.quantum-kpi-mini .info-dot {
+  position: absolute !important;
+  top: 16px !important;
+  right: 16px !important;
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 999px !important;
+  border: 1px solid #c8daeb !important;
+  background: #eef7ff !important;
+  color: #123b63 !important;
+  display: grid !important;
+  place-items: center !important;
+  cursor: pointer !important;
+}
+
+.quantum-kpi-mini .info-dot:hover {
+  background: #dcefff !important;
+}
+
+/* 2) Validazione KPI: data leggibile, non grigio su bianco */
+.validation-fast-page .validation-date {
+  min-width: 112px !important;
+  min-height: 104px !important;
+  border-radius: 24px !important;
+  background: linear-gradient(145deg, #123b63 0%, #1d5d91 100%) !important;
+  color: #ffffff !important;
+  display: grid !important;
+  place-items: center !important;
+  align-content: center !important;
+  text-align: center !important;
+  box-shadow: inset 0 -28px 42px rgba(255, 255, 255, .08), 0 14px 28px rgba(18, 59, 99, .18) !important;
+}
+
+.validation-fast-page .validation-date strong,
+.validation-fast-page .validation-date span {
+  color: #ffffff !important;
+  opacity: 1 !important;
+  text-shadow: 0 1px 1px rgba(0,0,0,.12) !important;
+}
+
+.validation-fast-page .validation-date strong {
+  font-size: 22px !important;
+  line-height: 1.05 !important;
+  font-weight: 950 !important;
+}
+
+.validation-fast-page .validation-date span {
+  margin-top: 6px !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+.validation-fast-page .validation-row-card {
+  align-items: center !important;
+}
+
+/* 3) Popup dati mancanti: sempre sopra al modal timesheet */
+.missing-fields-modal {
+  width: min(560px, calc(100vw - 32px)) !important;
+  border-radius: 28px !important;
+  border: 1px solid #f0d3a1 !important;
+  background: #ffffff !important;
+  box-shadow: 0 32px 100px rgba(8, 18, 32, .35) !important;
+  padding: 24px !important;
+  display: grid !important;
+  grid-template-columns: 58px 1fr !important;
+  gap: 18px !important;
+}
+
+.missing-fields-icon {
+  width: 58px !important;
+  height: 58px !important;
+  border-radius: 20px !important;
+  display: grid !important;
+  place-items: center !important;
+  background: #fff3dc !important;
+  color: #ad6800 !important;
+}
+
+.missing-fields-head {
+  display: flex !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  align-items: flex-start !important;
+}
+
+.missing-fields-content h3 {
+  margin: 4px 0 0 !important;
+  font-size: 24px !important;
+  letter-spacing: -.04em !important;
+}
+
+.missing-fields-content p {
+  color: #66758c !important;
+  margin: 14px 0 10px !important;
+}
+
+.missing-fields-content ul {
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+  display: grid !important;
+  gap: 8px !important;
+}
+
+.missing-fields-content li {
+  padding: 10px 12px !important;
+  border-radius: 14px !important;
+  background: #fff8e8 !important;
+  color: #7a4a00 !important;
+  font-weight: 850 !important;
+  border: 1px solid #f6dfb8 !important;
+}
+
+/* 4) Modal timesheet: evita che i campi in basso restino coperti dalla barra salvataggio */
+.ts-modal {
+  max-height: min(92vh, 980px) !important;
+  overflow: auto !important;
+  padding-bottom: 0 !important;
+}
+
+.ts-modal-actions {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 4 !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.72), #fff 34%) !important;
+  padding: 16px 0 18px !important;
+}
+
+.ts-form-sections {
+  padding-bottom: 20px !important;
+}
+
+/* 5) PDF Preview nel Report */
+.pdf-preview-backdrop {
+  z-index: 80 !important;
+}
+
+.pdf-preview-modal {
+  width: min(1180px, calc(100vw - 34px)) !important;
+  height: min(88vh, 920px) !important;
+  border-radius: 28px !important;
+  background: #ffffff !important;
+  box-shadow: 0 34px 110px rgba(8, 18, 32, .38) !important;
+  overflow: hidden !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+}
+
+.pdf-preview-header {
+  padding: 18px 22px !important;
+  border-bottom: 1px solid #d7e1ec !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  align-items: flex-start !important;
+}
+
+.pdf-preview-frame {
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  background: #eef3f8 !important;
+}
+
+.report-filters-bar {
+  align-items: end !important;
+}
+
+.report-filters-bar label:not(.check-inline) {
+  display: grid !important;
+  gap: 6px !important;
+  font-weight: 850 !important;
+  color: #66758c !important;
+}
+
+.report-filters-bar select.input {
+  min-width: 240px !important;
+}
+
+@media (max-width: 760px) {
+  .quantum-kpi-board {
+    grid-template-columns: 1fr !important;
+  }
+
+  .missing-fields-modal {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pdf-preview-header {
+    flex-direction: column !important;
+  }
+}

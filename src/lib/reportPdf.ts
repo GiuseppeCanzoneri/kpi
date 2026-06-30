@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import * as autoTableModule from "jspdf-autotable";
 import type { IntercompanyInvoiceView, TimesheetView } from "../types/db";
 import { euro, numberIt } from "./format";
 import { downloadPdf, safeFilename } from "./pdfPreview";
@@ -11,6 +11,15 @@ declare module "jspdf" {
 type PdfFilters = { month: number; year: number; title?: string };
 type MonthlyRow = { da: string; a: string; area: string; ore: number; orePesate: number; imponibile: number; iva: number; totale: number; righe: number; contestazioni: boolean };
 const pageMargin = 12;
+
+function runAutoTable(doc: jsPDF, options: Record<string, unknown>) {
+  const fn = (autoTableModule as any).default ?? (autoTableModule as any).autoTable;
+  if (typeof fn !== "function") {
+    throw new Error("jspdf-autotable non è stato caricato correttamente. Controlla la versione installata.");
+  }
+  return fn(doc, options);
+}
+
 
 function safe(value: unknown, fallback = "—") { return value === null || value === undefined || value === "" ? fallback : String(value); }
 function asNumber(value: unknown) { const n = Number(value ?? 0); return Number.isFinite(n) ? n : 0; }
@@ -76,7 +85,7 @@ export function createTimesheetReportDoc(rows: TimesheetView[], filters: PdfFilt
     { label: "Importo", value: euro(totaleImporto) },
     { label: "Contestazioni", value: String(contestate) },
   ]);
-  autoTable(doc, {
+  runAutoTable(doc, {
     startY: y,
     margin: { left: pageMargin, right: pageMargin },
     styles: { font: "helvetica", fontSize: 7, cellPadding: 2, overflow: "linebreak", valign: "top" },
@@ -108,7 +117,7 @@ export function createMonthlySummaryReportDoc(rows: MonthlyRow[], filters: {mont
   const y = drawSummaryCards(doc, [
     { label: "Flussi", value: String(rows.length) }, { label: "Ore", value: numberIt(totals.ore) }, { label: "Ore pesate", value: numberIt(totals.orePesate) }, { label: "Imponibile", value: euro(totals.imponibile) }, { label: "Totale lordo", value: euro(totals.totale) },
   ]);
-  autoTable(doc, { startY: y, margin: { left: pageMargin, right: pageMargin }, styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [232,239,247], textColor: [15,33,58] }, head: [["Da società", "A società", "Area", "Righe", "Ore", "Ore pesate", "Imponibile", "IVA", "Totale", "Note"]], body: rows.map((r) => [safe(r.da), safe(r.a), safe(r.area), String(r.righe), numberIt(r.ore), numberIt(r.orePesate), euro(r.imponibile), euro(r.iva), euro(r.totale), r.contestazioni ? "Contiene contestazioni" : "OK"]) });
+  runAutoTable(doc, { startY: y, margin: { left: pageMargin, right: pageMargin }, styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [232,239,247], textColor: [15,33,58] }, head: [["Da società", "A società", "Area", "Righe", "Ore", "Ore pesate", "Imponibile", "IVA", "Totale", "Note"]], body: rows.map((r) => [safe(r.da), safe(r.a), safe(r.area), String(r.righe), numberIt(r.ore), numberIt(r.orePesate), euro(r.imponibile), euro(r.iva), euro(r.totale), r.contestazioni ? "Contiene contestazioni" : "OK"]) });
   addFooter(doc);
   return doc;
 }
@@ -116,7 +125,7 @@ export function createMonthlySummaryReportDoc(rows: MonthlyRow[], filters: {mont
 export function createInvoicesReportDoc(rows: IntercompanyInvoiceView[], filters: {month:number; year:number}) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   drawHeader(doc, "Fatture infragruppo", `Competenza: ${String(filters.month).padStart(2,"0")}/${filters.year}`);
-  autoTable(doc, { startY: 32, margin: { left: pageMargin, right: pageMargin }, styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" }, headStyles: { fillColor: [232,239,247], textColor: [15,33,58] }, head: [["Emittente", "Destinataria", "Mese", "Imponibile", "IVA", "Totale", "Stato", "Numero", "Data", "Note"]], body: rows.map((r) => [safe(r.employer_company_code ?? r.employer_company_name), safe(r.beneficiary_company_code ?? r.beneficiary_company_name), `${r.mese}/${r.anno}`, euro(r.imponibile), euro(r.iva), euro(r.totale), safe(r.stato), safe(r.numero_fattura), safe(r.data_fattura), safe(r.note)]) });
+  runAutoTable(doc, { startY: 32, margin: { left: pageMargin, right: pageMargin }, styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" }, headStyles: { fillColor: [232,239,247], textColor: [15,33,58] }, head: [["Emittente", "Destinataria", "Mese", "Imponibile", "IVA", "Totale", "Stato", "Numero", "Data", "Note"]], body: rows.map((r) => [safe(r.employer_company_code ?? r.employer_company_name), safe(r.beneficiary_company_code ?? r.beneficiary_company_name), `${r.mese}/${r.anno}`, euro(r.imponibile), euro(r.iva), euro(r.totale), safe(r.stato), safe(r.numero_fattura), safe(r.data_fattura), safe(r.note)]) });
   addFooter(doc);
   return doc;
 }
