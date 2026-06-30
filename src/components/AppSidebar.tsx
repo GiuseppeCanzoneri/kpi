@@ -11,7 +11,7 @@ const baseItems = [
   { to: "/kpi/direzione", label: "Direzione KPI", icon: ShieldCheck, adminOnly: true },
   { to: "/riepilogo", label: "Riepilogo mese", icon: FileSpreadsheet, adminOnly: true },
   { to: "/fatture", label: "Fatture infragruppo", icon: ReceiptText, adminOnly: true },
-  { to: "/report", label: "Report PDF", icon: FileText },
+  { to: "/report", label: "Reportistica Dipendenti", icon: FileText },
   { to: "/anagrafiche", label: "Anagrafiche", icon: Database, adminOnly: true },
   { to: "/tariffario", label: "Tariffario", icon: Settings2, superOnly: true },
   { to: "/centri-costo", label: "Centri di costo", icon: Building2, adminOnly: true },
