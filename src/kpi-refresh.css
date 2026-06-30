@@ -3329,3 +3329,225 @@ body {
     flex-direction: column !important;
   }
 }
+
+/* === FIX PDF NO AUTOTABLE + VALIDAZIONE KPI CARD ===
+   Incollare in fondo a src/kpi-refresh.css
+   Obiettivo: anteprima PDF senza jspdf-autotable + card validazione non accavallate.
+*/
+
+/* Card K1-K5: evita schiacciamento e testi tagliati */
+.quantum-kpi-board {
+  grid-template-columns: repeat(5, minmax(150px, 1fr)) !important;
+  gap: 18px !important;
+  align-items: stretch !important;
+  overflow-x: auto !important;
+  padding: 22px !important;
+}
+
+.quantum-kpi-mini {
+  min-width: 150px !important;
+  min-height: 190px !important;
+  padding: 20px 18px !important;
+  align-content: start !important;
+  overflow: hidden !important;
+}
+
+.quantum-kpi-mini strong {
+  display: block !important;
+  min-height: 46px !important;
+  font-size: 21px !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.04em !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  hyphens: none !important;
+}
+
+.quantum-kpi-mini b {
+  display: block !important;
+  margin-top: 18px !important;
+  font-size: clamp(34px, 3.6vw, 48px) !important;
+  line-height: 0.95 !important;
+  white-space: nowrap !important;
+}
+
+.quantum-kpi-mini small {
+  display: block !important;
+  margin-top: 14px !important;
+  font-size: 15px !important;
+  line-height: 1.2 !important;
+}
+
+.quantum-kpi-mini .info-dot {
+  top: 14px !important;
+  right: 14px !important;
+}
+
+/* Validazione KPI: layout largo, date block separato e niente sovrapposizioni */
+.validation-list {
+  display: grid !important;
+  gap: 18px !important;
+}
+
+.validation-row-card {
+  display: grid !important;
+  grid-template-columns: 34px 150px minmax(360px, 1fr) minmax(210px, 250px) auto !important;
+  gap: 22px !important;
+  align-items: center !important;
+  padding: 24px 26px !important;
+  min-height: 150px !important;
+  border-radius: 28px !important;
+  overflow: visible !important;
+}
+
+.validation-row-card > input[type="checkbox"] {
+  width: 18px !important;
+  height: 18px !important;
+  justify-self: center !important;
+  align-self: center !important;
+}
+
+.validation-row-card .validation-date {
+  width: 150px !important;
+  max-width: 150px !important;
+  min-height: 116px !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 22px 10px !important;
+  display: grid !important;
+  place-items: center !important;
+  align-content: center !important;
+  gap: 9px !important;
+  border-radius: 32px !important;
+  background: linear-gradient(135deg, #123b63 0%, #1d5d91 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 20px 44px rgba(18, 59, 99, 0.18) !important;
+  position: static !important;
+  transform: none !important;
+  z-index: 0 !important;
+}
+
+.validation-row-card .validation-date strong {
+  color: #ffffff !important;
+  font-size: 34px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  letter-spacing: -0.05em !important;
+}
+
+.validation-row-card .validation-date span {
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.validation-row-card .validation-main {
+  min-width: 0 !important;
+  width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: grid !important;
+  gap: 7px !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.validation-row-card .validation-main h3 {
+  margin: 0 !important;
+  color: #142033 !important;
+  font-size: clamp(23px, 2.1vw, 32px) !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.045em !important;
+  overflow-wrap: anywhere !important;
+}
+
+.validation-row-card .validation-main p {
+  margin: 0 !important;
+  color: #6c7a8c !important;
+  font-size: 22px !important;
+  line-height: 1.15 !important;
+  font-weight: 700 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.validation-row-card .validation-main small {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  color: #6c7a8c !important;
+  font-size: 16px !important;
+  line-height: 1.35 !important;
+  max-width: 100% !important;
+}
+
+.validation-row-card .validation-status {
+  min-width: 0 !important;
+  display: grid !important;
+  justify-items: start !important;
+  gap: 7px !important;
+}
+
+.validation-row-card .row-actions {
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+}
+
+/* Modale anteprima piÃ¹ stabile */
+.pdf-preview-modal {
+  width: min(1280px, calc(100vw - 34px)) !important;
+  height: min(90vh, 920px) !important;
+}
+
+.pdf-preview-frame {
+  background: #eef3f8 !important;
+}
+
+@media (max-width: 1280px) {
+  .quantum-kpi-board {
+    grid-template-columns: repeat(3, minmax(180px, 1fr)) !important;
+  }
+
+  .validation-row-card {
+    grid-template-columns: 34px 140px minmax(0, 1fr) !important;
+  }
+
+  .validation-row-card .validation-status,
+  .validation-row-card .row-actions {
+    grid-column: 3 / -1 !important;
+  }
+
+  .validation-row-card .row-actions {
+    justify-content: flex-start !important;
+  }
+}
+
+@media (max-width: 780px) {
+  .quantum-kpi-board {
+    grid-template-columns: 1fr !important;
+    overflow-x: visible !important;
+  }
+
+  .validation-row-card {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    padding: 20px !important;
+  }
+
+  .validation-row-card .validation-date {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 76px !important;
+    grid-template-columns: auto auto !important;
+    justify-content: center !important;
+    border-radius: 22px !important;
+  }
+
+  .validation-row-card .validation-status,
+  .validation-row-card .row-actions {
+    grid-column: auto !important;
+  }
+}
