@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { KpiCard } from "../components/KpiCard";
 import { PageHeader } from "../components/PageHeader";
+import { KpiCard } from "../components/KpiCard";
 import { EmptyState } from "../components/EmptyState";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../integrations/supabase/client";
@@ -50,7 +50,6 @@ export default function Dashboard() {
       }
       setLoading(false);
     }
-
     void loadRows();
   }, [areaIds, isAdminArea, isSuperAdmin, month, user?.email, year]);
 
@@ -60,6 +59,7 @@ export default function Dashboard() {
     const importo = rows.reduce((sum, row) => sum + Number(row.importo_visibile ?? row.importo ?? 0), 0);
     const infragruppo = rows.filter((row) => row.tipo_movimento === "Infragruppo fatturabile");
     const interne = rows.filter((row) => row.tipo_movimento === "Interno non fatturabile");
+
     return {
       ore,
       orePesate,
@@ -78,21 +78,29 @@ export default function Dashboard() {
   const byActivity = useMemo(() => groupSum(rows, "nome_categoria"), [rows]);
 
   return (
-    <section>
+    <div className="dashboard-page">
       <PageHeader
         title="Dashboard KPI"
-        subtitle="Vista sintetica delle ore, dei movimenti infragruppo e delle attività per area."
+        description="Vista sintetica delle ore, dei movimenti infragruppo e delle attività per area."
         actions={
-          <div className="filter-row compact-filter">
-            <select className="input" value={month} onChange={(event) => setMonth(Number(event.target.value))}>
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((item) => <option key={item} value={item}>{String(item).padStart(2, "0")}</option>)}
-            </select>
-            <input className="input" type="number" value={year} onChange={(event) => setYear(Number(event.target.value))} />
+          <div className="dashboard-period-controls">
+            <label>
+              <span>Mese</span>
+              <select className="input" value={month} onChange={(event) => setMonth(Number(event.target.value))}>
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((item) => (
+                  <option key={item} value={item}>{String(item).padStart(2, "0")}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Anno</span>
+              <input className="input" type="number" value={year} onChange={(event) => setYear(Number(event.target.value))} />
+            </label>
           </div>
         }
       />
 
-      <div className="kpi-grid">
+      <div className="kpi-grid dashboard-kpi-grid">
         <KpiCard label="Ore totali" value={numberIt(totals.ore)} hint="Ore inserite nel mese" />
         <KpiCard label="Ore pesate" value={numberIt(totals.orePesate)} hint="Con coefficienti attività" />
         <KpiCard label="Infragruppo" value={numberIt(totals.oreInfragruppo)} hint="Ore fatturabili tra società" />
@@ -104,29 +112,44 @@ export default function Dashboard() {
         <KpiCard label="Approvate" value={totals.approvate} hint="Pronte per riepilogo" />
       </div>
 
-      {loading ? <div className="panel">Caricamento dashboard…</div> : rows.length === 0 ? <EmptyState title="Nessun dato nel periodo" text="Inserisci o importa ore approvate per popolare la dashboard." /> : (
-        <div className="dashboard-grid">
+      {loading ? (
+        <div className="loading-card"><div className="spinner" /><strong>Caricamento dashboard…</strong></div>
+      ) : rows.length === 0 ? (
+        <EmptyState title="Nessun dato nel mese selezionato" text="Inserisci ore dal Timesheet oppure cambia mese e anno." />
+      ) : (
+        <div className="dashboard-grid dashboard-summary-grid">
           <SummaryPanel title="Ore per area" rows={byArea} />
           <SummaryPanel title="Ore per dipendente" rows={byEmployee} />
           <SummaryPanel title="Ore per attività" rows={byActivity} />
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
 function SummaryPanel({ title, rows }: { title: string; rows: Array<[string, number]> }) {
+  const max = Math.max(...rows.map(([, value]) => value), 1);
+
   return (
-    <div className="panel summary-panel">
-      <h3>{title}</h3>
+    <section className="panel dashboard-summary-panel">
+      <div className="panel-header">
+        <div>
+          <h3>{title}</h3>
+          <p>Prime voci per ore caricate nel periodo.</p>
+        </div>
+      </div>
+
       <div className="summary-list">
         {rows.map(([label, value]) => (
           <div className="summary-row" key={label}>
-            <span>{label}</span>
-            <strong>{numberIt(value)}</strong>
+            <div className="summary-row-top">
+              <strong>{label}</strong>
+              <span>{numberIt(value)}</span>
+            </div>
+            <div className="summary-bar"><i style={{ width: `${Math.max(8, (value / max) * 100)}%` }} /></div>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
