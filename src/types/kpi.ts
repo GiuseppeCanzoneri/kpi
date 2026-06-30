@@ -1,6 +1,22 @@
 export type KpiPeriodType = "WEEK" | "MONTH";
 export type KpiPeriodStatus = "Aperto" | "In verifica" | "Chiuso" | "Riaperto" | "Escluso";
 export type KpiLevel = "Basso" | "Attenzione" | "In linea" | "Alto" | "Eccellente";
+export type KpiCode = "K1" | "K2" | "K3" | "K4" | "K5";
+
+export interface KpiMetricSetting {
+  code: KpiCode;
+  nome: string;
+  nome_breve: string | null;
+  descrizione: string | null;
+  popup_titolo: string | null;
+  popup_testo: string | null;
+  peso_percentuale: number;
+  attivo: boolean;
+  soglia_minima: number | null;
+  formula_label: string | null;
+  note: string | null;
+  scala_massima: number;
+}
 
 export interface KpiDashboardRow {
   id: string;
@@ -8,12 +24,12 @@ export interface KpiDashboardRow {
   period_type: KpiPeriodType;
   period_start: string;
   period_end: string;
-  period_status: KpiPeriodStatus;
+  period_status?: KpiPeriodStatus;
   employee_id: string;
   employee_name: string;
   employee_email: string;
   photo_url: string | null;
-  mansione: string | null;
+  mansione?: string | null;
   company_code: string | null;
   company_name: string | null;
   codice_area: string | null;
@@ -30,6 +46,8 @@ export interface KpiDashboardRow {
   performance_index: number;
   livello: KpiLevel;
   eligible: boolean;
+  is_top_performer?: boolean;
+  recognition_status?: string;
   eligibility_reason: string | null;
   productive_hours: number;
   available_hours_net: number;
@@ -45,19 +63,21 @@ export interface KpiDashboardRow {
   computed_at: string;
   badges: { code: string; label: string; reason: string | null }[];
   group_rank?: number;
+  overall_rank?: number;
 }
 
 export interface KpiTraceRow {
-  id: string;
+  id?: string;
   score_id: string;
-  employee_id: string;
+  employee_id?: string;
   employee_name: string;
-  period_type: KpiPeriodType;
-  period_start: string;
-  period_end: string;
+  period_type?: KpiPeriodType;
+  period_start?: string;
+  period_end?: string;
   timesheet_entry_id: string;
   data: string;
   descrizione: string | null;
+  note?: string | null;
   ore: number;
   kpi_quality_outcome: string;
   kpi_rework_hours: number;

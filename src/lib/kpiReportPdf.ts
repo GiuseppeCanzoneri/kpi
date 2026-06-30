@@ -1,187 +1,164 @@
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
+import type { KpiDashboardRow, KpiTraceRow } from "../types/kpi";
+import { downloadPdf, safeFilename } from "./pdfPreview";
 
-type KpiScoreRow = Record<string, any>;
-type KpiTraceRow = Record<string, any>;
-
-const nf = new Intl.NumberFormat("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-function n(value: unknown) {
-  return nf.format(Number(value ?? 0));
+declare module "jspdf" {
+  interface jsPDF {
+    lastAutoTable?: { finalY?: number };
+  }
 }
 
-function text(value: unknown) {
-  return String(value ?? "—");
+function fmt(value: unknown) {
+  return new Intl.NumberFormat("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value ?? 0));
+}
+
+function safe(value: unknown, fallback = "—") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
 }
 
 function addHeader(doc: jsPDF, title: string, subtitle: string) {
-  doc.setFillColor(14, 48, 79);
-  doc.rect(0, 0, 297, 22, "F");
+  const width = doc.internal.pageSize.getWidth();
+  doc.setFillColor(18, 59, 99);
+  doc.rect(0, 0, width, 22, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(15);
   doc.setFont("helvetica", "bold");
-  doc.text(title, 14, 14);
-  doc.setFontSize(9);
+  doc.setFontSize(15);
+  doc.text(title, 12, 12);
   doc.setFont("helvetica", "normal");
-  doc.text(subtitle, 220, 14);
-  doc.setTextColor(18, 28, 45);
+  doc.setFontSize(8);
+  doc.text(subtitle, 12, 18);
+  doc.setTextColor(20, 32, 51);
 }
 
 function addFooter(doc: jsPDF) {
-  const pages = doc.getNumberOfPages();
-  for (let i = 1; i <= pages; i += 1) {
-    doc.setPage(i);
+  const pageCount = doc.getNumberOfPages();
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
     doc.setFontSize(8);
-    doc.setTextColor(110, 123, 145);
-    doc.text(`Documento generato da KPI Quantum - pagina ${i}/${pages}`, 14, 204);
+    doc.setTextColor(110, 122, 140);
+    doc.text(`Generato il ${new Date().toLocaleString("it-IT")} · KPI Performance`, 12, height - 8);
+    doc.text(`Pagina ${page} di ${pageCount}`, width - 12, height - 8, { align: "right" });
   }
 }
 
-function gaugeColor(level: string): [number, number, number] {
-  if (level === "Eccellente") return [45, 126, 197];
-  if (level === "Alto") return [64, 160, 112];
-  if (level === "In linea") return [224, 189, 70];
-  if (level === "Attenzione") return [226, 139, 45];
-  return [200, 58, 58];
-}
-
-function drawPiGauge(doc: jsPDF, x: number, y: number, pi: number, level: string) {
-  const radius = 24;
-  const [r, g, b] = gaugeColor(level);
-  doc.setDrawColor(225, 232, 240);
-  doc.setLineWidth(8);
-  doc.circle(x, y, radius, "S");
-  doc.setDrawColor(r, g, b);
-  doc.setLineWidth(8);
-  const circumference = Math.PI * 2 * radius;
-  const percent = Math.max(0, Math.min(1, pi / 120));
-  doc.setLineDashPattern([circumference * percent, circumference * (1 - percent)], 0);
-  doc.circle(x, y, radius, "S");
-  doc.setLineDashPattern([], 0);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.setTextColor(18, 28, 45);
-  doc.text(`${Math.round(pi)}/120`, x, y + 2, { align: "center" });
-  doc.setFontSize(8);
-  doc.setTextColor(r, g, b);
-  doc.text(level, x, y + 10, { align: "center" });
-}
-
-export function downloadKpiIndividualPdf(score: KpiScoreRow, trace: KpiTraceRow[] = []) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const period = `${text(score.period_type)} ${text(score.period_start)} / ${text(score.period_end)}`;
-  addHeader(doc, "QUANTUM | KPI PERFORMANCE REPORT", `Generato il ${new Date().toLocaleString("it-IT")}`);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(text(score.employee_name), 14, 35);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(90, 105, 125);
-  doc.text(`${text(score.nome_ruolo)} · ${text(score.nome_gruppo)} · ${text(score.company_name)}`, 14, 43);
-  doc.text(`Periodo: ${period}`, 14, 50);
-
-  drawPiGauge(doc, 246, 52, Number(score.performance_index ?? 0), text(score.livello));
-
-  const cardY = 66;
-  const metrics = [
-    ["K1 Saturazione", n(score.k1_saturazione), "15%"],
-    ["K2 Produzione", n(score.k2_produzione), "30%"],
-    ["K3 Efficienza", n(score.k3_efficienza), "20%"],
-    ["K4 Qualità", n(score.k4_qualita), "20%"],
-    ["K5 Puntualità", n(score.k5_puntualita), "15%"],
-  ];
-  metrics.forEach((m, i) => {
-    const x = 14 + i * 53;
-    doc.setFillColor(245, 248, 252);
-    doc.roundedRect(x, cardY, 48, 24, 3, 3, "F");
-    doc.setFontSize(8);
-    doc.setTextColor(90, 105, 125);
-    doc.text(m[0], x + 4, cardY + 7);
+function cards(doc: jsPDF, items: { label: string; value: string }[], y = 30) {
+  const width = doc.internal.pageSize.getWidth();
+  const cardWidth = (width - 24 - (items.length - 1) * 4) / items.length;
+  items.forEach((item, index) => {
+    const x = 12 + index * (cardWidth + 4);
+    doc.setDrawColor(215, 225, 236);
+    doc.setFillColor(247, 250, 253);
+    doc.roundedRect(x, y, cardWidth, 18, 2, 2, "FD");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.setTextColor(18, 28, 45);
-    doc.text(m[1], x + 4, cardY + 17);
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
-    doc.text(`peso ${m[2]}`, x + 32, cardY + 17);
+    doc.setTextColor(110, 122, 140);
+    doc.text(item.label.toUpperCase(), x + 3, y + 6);
+    doc.setFontSize(12);
+    doc.setTextColor(18, 59, 99);
+    doc.text(item.value, x + 3, y + 14);
+  });
+  return y + 26;
+}
+
+export function createKpiIndividualPdf(row: KpiDashboardRow, trace: KpiTraceRow[]) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  addHeader(doc, "Scheda KPI individuale", `${row.employee_name} · ${row.period_type === "WEEK" ? "Settimana" : "Mese"} ${row.period_start} / ${row.period_end}`);
+
+  let y = cards(doc, [
+    { label: "Indice", value: `${fmt(row.performance_index)}/100` },
+    { label: "Livello", value: safe(row.livello) },
+    { label: "Classifica", value: `#${safe(row.group_rank)}` },
+    { label: "Riconoscimento", value: row.is_top_performer || row.eligible ? "Top performer" : "No" },
+    { label: "Righe validate", value: `${safe(row.validated_rows)}/${safe(row.total_rows)}` },
+  ]);
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 12, right: 12 },
+    head: [["KPI", "Nome", "Valore", "Lettura"]],
+    body: [
+      ["K1", "Tempo produttivo", `${fmt(row.k1_saturazione)}/100`, "Tempo produttivo validato rispetto al target"],
+      ["K2", "Produzione", `${fmt(row.k2_produzione)}/100`, "Produzione standard ponderata completata"],
+      ["K3", "Efficienza", `${fmt(row.k3_efficienza)}/100`, "Tempo standard rispetto alle ore effettive"],
+      ["K4", "Qualità", `${fmt(row.k4_qualita)}/100`, "Correttezza, integrazioni, respinte e rilavorazioni"],
+      ["K5", "Scadenze", `${fmt(row.k5_puntualita)}/100`, "Rispetto delle scadenze assegnate"],
+    ],
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [18, 59, 99], textColor: [255, 255, 255] },
   });
 
-  const badges = Array.isArray(score.badges) ? score.badges : [];
+  y = (doc.lastAutoTable?.finalY ?? y) + 10;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(18, 28, 45);
-  doc.text("Esito e riconoscimenti", 14, 103);
+  doc.setFontSize(11);
+  doc.text("Motivazione / controllo", 12, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(`Idoneità premio: ${score.eligible ? "SI" : "NO"}`, 14, 110);
-  doc.text(`Motivo: ${text(score.eligibility_reason || "Prestazione eleggibile")}`, 14, 116);
-  doc.text(`Badge: ${badges.length ? badges.map((b: any) => b.label).join(", ") : "Nessun badge consolidato"}`, 14, 122);
+  doc.text(doc.splitTextToSize(row.eligibility_reason || (row.eligible ? "Idoneo al riconoscimento Top performer." : "Non idoneo al riconoscimento nel periodo."), 270), 12, y + 6);
 
-  (doc as any).autoTable({
-    startY: 132,
-    head: [["Dato", "Valore", "Note"]],
-    body: [
-      ["Ore produttive", n(score.productive_hours), "Ore validate al netto delle esclusioni"],
-      ["Ore disponibili nette", n(score.available_hours_net), "Base di saturazione"],
-      ["Produzione standard", n(score.standard_units), "Tempo standard x complessità"],
-      ["Rilavorazioni", n(score.rework_hours), "Penalizzano qualità"],
-      ["Ore escluse", n(score.excluded_hours), "Assenze/blocchi autorizzati"],
-      ["Giornate lavorate", String(score.working_days ?? 0), "Minimo periodo richiesto"],
-      ["Righe validate", `${score.validated_rows ?? 0}/${score.total_rows ?? 0}`, "Tracciabilità KPI"],
-    ],
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [14, 48, 79] },
+  y += 22;
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 12, right: 12 },
+    head: [["Data", "Commessa", "Attività", "Ore", "Std", "Qualità", "Scadenza", "Descrizione / note"]],
+    body: trace.map((r) => [
+      safe(r.data),
+      `${safe(r.codice_commessa)}\n${safe(r.descrizione_commessa, "")}`.trim(),
+      `${safe(r.codice_attivita)}\n${safe(r.nome_categoria, "")}`.trim(),
+      fmt(r.ore),
+      fmt(r.standard_units),
+      `${safe(r.kpi_quality_outcome)}\n${fmt(r.quality_points)}`,
+      r.kpi_due_date ? `${safe(r.kpi_due_date)}\n${safe(r.kpi_completed_at, "non chiusa")}` : "—",
+      [r.descrizione, r.note, r.kpi_exclusion_reason ? `Esclusione: ${r.kpi_exclusion_reason}` : null].filter(Boolean).join("\n"),
+    ]),
+    styles: { fontSize: 7, cellPadding: 2, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: [232, 239, 247], textColor: [15, 33, 58] },
   });
 
-  if (trace.length) {
-    doc.addPage();
-    addHeader(doc, "Dettaglio attività che generano il KPI", period);
-    (doc as any).autoTable({
-      startY: 30,
-      head: [["Data", "Commessa", "Attività", "Ore", "Std", "Qualità", "Puntualità", "Descrizione"]],
-      body: trace.map((r) => [
-        text(r.data),
-        text(r.codice_commessa),
-        text(r.codice_attivita),
-        n(r.ore),
-        n(r.standard_units),
-        n(r.quality_points),
-        r.punctuality_points == null ? "—" : n(r.punctuality_points),
-        text(r.descrizione).slice(0, 120),
-      ]),
-      styles: { fontSize: 7, cellPadding: 1.6, overflow: "linebreak" },
-      headStyles: { fillColor: [14, 48, 79] },
-      columnStyles: { 7: { cellWidth: 80 } },
-    });
-  }
-
   addFooter(doc);
-  doc.save(`KPI_${text(score.employee_name).replaceAll(" ", "_")}_${text(score.period_start)}.pdf`);
+  return doc;
 }
 
-export function downloadKpiLeaderboardPdf(rows: KpiScoreRow[], title = "Classifica KPI") {
+export function createKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classifica KPI") {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  addHeader(doc, `QUANTUM | ${title}`, `Generato il ${new Date().toLocaleString("it-IT")}`);
-  (doc as any).autoTable({
-    startY: 32,
-    head: [["Rank", "Dipendente", "Gruppo", "PI", "Livello", "K1", "K2", "K3", "K4", "K5", "Badge/Note"]],
+  addHeader(doc, title, "Classifica ordinata per indice. Top performer solo se supera soglie e controlli obbligatori.");
+  cards(doc, [
+    { label: "Valutabili", value: String(rows.length) },
+    { label: "Top performer", value: String(rows.filter((r) => r.is_top_performer || r.eligible).length) },
+    { label: "Scala", value: "0-100" },
+  ], 30);
+
+  autoTable(doc, {
+    startY: 58,
+    margin: { left: 12, right: 12 },
+    head: [["Rank", "Dipendente", "Gruppo", "PI", "K1", "K2", "K3", "K4", "K5", "Riconoscimento"]],
     body: rows.map((r) => [
-      String(r.group_rank ?? "—"),
-      text(r.employee_name),
-      text(r.nome_gruppo),
-      n(r.performance_index),
-      text(r.livello),
-      n(r.k1_saturazione),
-      n(r.k2_produzione),
-      n(r.k3_efficienza),
-      n(r.k4_qualita),
-      n(r.k5_puntualita),
-      r.eligible ? "Elegibile" : text(r.eligibility_reason),
+      `#${safe(r.group_rank)}`,
+      `${safe(r.employee_name)}\n${safe(r.employee_email, "")}`.trim(),
+      safe(r.nome_gruppo),
+      fmt(r.performance_index),
+      fmt(r.k1_saturazione),
+      fmt(r.k2_produzione),
+      fmt(r.k3_efficienza),
+      fmt(r.k4_qualita),
+      fmt(r.k5_puntualita),
+      r.is_top_performer || r.eligible ? "Top performer" : safe(r.eligibility_reason, "Solo classifica"),
     ]),
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [14, 48, 79] },
+    styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: [18, 59, 99], textColor: [255, 255, 255] },
   });
+
   addFooter(doc);
-  doc.save(`${title.replaceAll(" ", "_")}.pdf`);
+  return doc;
+}
+
+export function downloadKpiIndividualPdf(row: KpiDashboardRow, trace: KpiTraceRow[]) {
+  downloadPdf(createKpiIndividualPdf(row, trace), `${safeFilename(`kpi-${row.employee_name}`)}.pdf`);
+}
+
+export function downloadKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classifica KPI") {
+  downloadPdf(createKpiLeaderboardPdf(rows, title), `${safeFilename(title)}.pdf`);
 }

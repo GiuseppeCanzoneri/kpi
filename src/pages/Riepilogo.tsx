@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, FileText, RefreshCw } from "lucide-react";
+import { AlertTriangle, Eye, RefreshCw } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { supabase } from "../integrations/supabase/client";
 import type { MonthlySummaryLive, TimesheetView } from "../types/db";
 import { euro, numberIt } from "../lib/format";
-import { generateMonthlySummaryPdf } from "../lib/reportPdf";
+import { createTimesheetReportDoc } from "../lib/reportPdf";
+import { PdfPreviewModal, type PdfPreviewState } from "../components/PdfPreviewModal";
+import { makePdfPreview, revokePdfPreview, safeFilename } from "../lib/pdfPreview";
+import { useAuth } from "../hooks/useAuth";
+import { filterRowsByRole } from "../lib/kpiData";
 
 type AggregateRow = {
   key: string;
@@ -25,6 +29,7 @@ type AggregateRow = {
 };
 
 export default function Riepilogo() {
+  const { isSuperAdmin, isAdminArea, areaIds, user } = useAuth();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -32,11 +37,18 @@ export default function Riepilogo() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshingDb, setRefreshingDb] = useState(false);
-  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<PdfPreviewState | null>(null);
+
+  const closePreview = () => {
+    revokePdfPreview(pdfPreview);
+    setPdfPreview(null);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     const { data, error } = await supabase
       .from("v_kpi_monthly_summary_live")
       .select("*")
@@ -46,8 +58,12 @@ export default function Riepilogo() {
       .order("beneficiary_company_code", { ascending: true })
       .order("codice_area", { ascending: true });
 
-    if (error) setError(error.message);
-    else setRows((data ?? []) as MonthlySummaryLive[]);
+    if (error) {
+      setError(error.message);
+    } else {
+      setRows((data ?? []) as MonthlySummaryLive[]);
+    }
+
     setLoading(false);
   }, [month, year]);
 
@@ -55,8 +71,9 @@ export default function Riepilogo() {
     void load();
   }, [load]);
 
-  const summary = useMemo<AggregateRow[]>(() => {
+  const summary = useMemo(() => {
     const map = new Map<string, AggregateRow>();
+
     rows.forEach((r) => {
       const key = `${r.employer_company_id}-${r.beneficiary_company_id}-${r.business_area_id}`;
       const current = map.get(key) ?? {
@@ -75,6 +92,7 @@ export default function Riepilogo() {
         righe: 0,
         contestazioni: false,
       };
+
       current.ore += Number(r.ore_totali ?? 0);
       current.orePesate += Number(r.ore_pesate_totali ?? 0);
       current.imponibile += Number(r.imponibile ?? 0);
@@ -84,29 +102,40 @@ export default function Riepilogo() {
       current.contestazioni = current.contestazioni || Boolean(r.contiene_contestazioni);
       map.set(key, current);
     });
-    return Array.from(map.values()).sort((a, b) => `${a.da}${a.a}${a.area}`.localeCompare(`${b.da}${b.a}${b.area}`));
+
+    return Array.from(map.values()).sort((a, b) =>
+      `${a.da}${a.a}${a.area}`.localeCompare(`${b.da}${b.a}${b.area}`),
+    );
   }, [rows]);
 
-  const totals = useMemo(() => ({
-    ore: summary.reduce((a, r) => a + r.ore, 0),
-    orePesate: summary.reduce((a, r) => a + r.orePesate, 0),
-    imponibile: summary.reduce((a, r) => a + r.imponibile, 0),
-    iva: summary.reduce((a, r) => a + r.iva, 0),
-    totale: summary.reduce((a, r) => a + r.totale, 0),
-    contestazioni: summary.filter((r) => r.contestazioni).length,
-  }), [summary]);
+  const totals = useMemo(
+    () => ({
+      ore: summary.reduce((a, r) => a + r.ore, 0),
+      orePesate: summary.reduce((a, r) => a + r.orePesate, 0),
+      imponibile: summary.reduce((a, r) => a + r.imponibile, 0),
+      iva: summary.reduce((a, r) => a + r.iva, 0),
+      totale: summary.reduce((a, r) => a + r.totale, 0),
+      contestazioni: summary.filter((r) => r.contestazioni).length,
+    }),
+    [summary],
+  );
 
   const refreshDb = async () => {
     setRefreshingDb(true);
     setError(null);
-    const { error } = await supabase.rpc("kpi_refresh_monthly_summaries", { p_mese: month, p_anno: year });
+
+    const { error } = await supabase.rpc("kpi_refresh_monthly_summaries", {
+      p_mese: month,
+      p_anno: year,
+    });
+
     setRefreshingDb(false);
     if (error) setError(error.message);
     else await load();
   };
 
-  const exportPdf = async () => {
-    setGeneratingPdf(true);
+  const generatePdf = async () => {
+    setExportingPdf(true);
     setError(null);
 
     const { data, error } = await supabase
@@ -115,65 +144,103 @@ export default function Riepilogo() {
       .eq("mese", month)
       .eq("anno", year)
       .eq("stato", "Approvato")
-      .order("data", { ascending: true })
-      .order("employee_name", { ascending: true });
+      .order("data", { ascending: false });
 
-    setGeneratingPdf(false);
+    setExportingPdf(false);
 
     if (error) {
       setError(error.message);
       return;
     }
 
-    const details = (data ?? []) as TimesheetView[];
-    const doc = generateMonthlySummaryPdf(summary, details, { month, year });
-    doc.save(`Riepilogo_mese_${year}_${String(month).padStart(2, "0")}.pdf`);
+    const visibleRows = filterRowsByRole(
+      (data ?? []) as TimesheetView[],
+      areaIds,
+      user?.email?.toLowerCase() ?? null,
+      isSuperAdmin,
+      isAdminArea,
+    );
+
+    if (visibleRows.length === 0) {
+      window.alert("Nessuna ora approvata trovata da esportare nel PDF per il mese selezionato.");
+      return;
+    }
+
+    const title = "Riepilogo mese - dettaglio ore dipendenti";
+    const doc = createTimesheetReportDoc(visibleRows, { month, year, title });
+    setPdfPreview(makePdfPreview(doc, `${safeFilename(title)}-${year}-${String(month).padStart(2, "0")}.pdf`, title));
   };
 
   return (
-    <div>
+    <div className="page-shell">
       <PageHeader
         title="Riepilogo mese"
-        description="Riepilogo live delle ore approvate. Non dipende più da una tabella vuota: legge direttamente dai timesheet approvati."
+        description="Riepilogo live delle ore approvate. Il PDF esporta il dettaglio completo con descrizioni e note scritte dai dipendenti."
         actions={
-          <>
-            <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
-            <button className="button secondary" onClick={() => void refreshDb()} disabled={refreshingDb}><RefreshCw size={16} /> {refreshingDb ? "Rigenero..." : "Rigenera DB"}</button>
-            <button className="button" onClick={() => void exportPdf()} disabled={summary.length === 0 || generatingPdf}><FileText size={16} /> {generatingPdf ? "Genero..." : "PDF completo"}</button>
-          </>
+          <div className="actions-row">
+            <button className="button secondary" onClick={() => void load()} disabled={loading}>
+              <RefreshCw size={16} />
+              Aggiorna
+            </button>
+            <button className="button secondary" onClick={() => void refreshDb()} disabled={refreshingDb}>
+              <RefreshCw size={16} />
+              {refreshingDb ? "Rigenero..." : "Rigenera DB"}
+            </button>
+            <button className="button" onClick={() => void generatePdf()} disabled={summary.length === 0 || exportingPdf}>
+              <Eye size={16} />
+              {exportingPdf ? "Genero..." : "Anteprima PDF"}
+            </button>
+          </div>
         }
       />
 
-      <div className="kpi-grid">
+      <section className="kpi-grid five">
         <div className="kpi-card"><span>Ore approvate</span><strong>{numberIt(totals.ore)}</strong><small>Mese {month}/{year}</small></div>
         <div className="kpi-card"><span>Ore pesate</span><strong>{numberIt(totals.orePesate)}</strong><small>Coefficienti applicati</small></div>
         <div className="kpi-card"><span>Imponibile</span><strong>{euro(totals.imponibile)}</strong><small>Base fatturabile</small></div>
         <div className="kpi-card"><span>IVA</span><strong>{euro(totals.iva)}</strong><small>Calcolo 22%</small></div>
         <div className="kpi-card"><span>Contestazioni</span><strong>{totals.contestazioni}</strong><small>Incluse nel riepilogo</small></div>
-      </div>
+      </section>
 
-      <div className="filters-bar pro-filters">
-        <label>Mese <input className="input small" type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} /></label>
-        <label>Anno <input className="input small" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label>
-        <div className="filters-summary"><strong>{summary.length}</strong> flussi · <strong>{euro(totals.totale)}</strong> totale lordo</div>
-      </div>
+      <section className="panel filters-panel">
+        <label>
+          Mese
+          <input className="input compact" type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} />
+        </label>
+        <label>
+          Anno
+          <input className="input compact" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
+        </label>
+        <div className="panel-total">
+          <strong>{summary.length}</strong> flussi · <strong>{euro(totals.totale)}</strong> totale lordo
+        </div>
+      </section>
 
-      {error && <div className="alert error"><AlertTriangle size={16} /> {error}</div>}
-      {loading && <div className="loading">Caricamento...</div>}
+      {error && <div className="alert"><AlertTriangle size={16} />{error}</div>}
+      {loading && <div className="panel muted">Caricamento...</div>}
 
       {summary.length === 0 ? (
-        <EmptyState title="Nessun dato per il mese selezionato" text="Se hai caricato ore, verifica di aver lanciato lo script SQL e che i timesheet siano Approvato." />
+        <EmptyState title="Nessun riepilogo" text="Non ci sono ore approvate per il mese selezionato." />
       ) : (
-        <div className="table-wrap elevated-table">
+        <div className="table-card">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Da società</th><th>A società</th><th>Area</th><th>Righe</th><th>Ore approvate</th><th>Ore pesate</th><th>Imponibile</th><th>IVA 22%</th><th>Totale lordo</th><th>Note</th>
+                <th>Da società</th>
+                <th>A società</th>
+                <th>Area</th>
+                <th>Righe</th>
+                <th>Ore approvate</th>
+                <th>Ore pesate</th>
+                <th>Imponibile</th>
+                <th>IVA 22%</th>
+                <th>Totale lordo</th>
+                <th>Note</th>
               </tr>
             </thead>
             <tbody>
               {summary.map((r) => (
-                <tr key={r.key} className={r.contestazioni ? "row-contested" : undefined}>
+                <tr key={r.key}>
                   <td><strong>{r.da}</strong></td>
                   <td>{r.a}</td>
                   <td>{r.area}</td>
@@ -183,13 +250,14 @@ export default function Riepilogo() {
                   <td>{euro(r.imponibile)}</td>
                   <td>{euro(r.iva)}</td>
                   <td><strong>{euro(r.totale)}</strong></td>
-                  <td>{r.contestazioni ? <span className="status-pill da-correggere">Contiene contestazioni</span> : <span className="status-pill approvato">OK</span>}</td>
+                  <td>{r.contestazioni ? <span className="badge warning">Contestazioni</span> : <span className="badge ok">OK</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {pdfPreview && <PdfPreviewModal preview={pdfPreview} onClose={closePreview} />}
     </div>
   );
 }

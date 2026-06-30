@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Calculator, CheckCircle2, RefreshCw, Save, Search, Sparkles, X } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
+import { MissingFieldsModal } from "../components/MissingFieldsModal";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
+import { findMissingFields } from "../lib/formValidation";
 
-type QueueRow = Record<string, any> & {
+type QueueRow = {
   id: string;
   data: string;
+  business_area_id: string | null;
   employee_name: string;
   employee_email: string;
   nome_area: string | null;
@@ -18,6 +21,7 @@ type QueueRow = Record<string, any> & {
   descrizione: string | null;
   ore: number;
   kpi_quality_outcome: string;
+  kpi_quality_bonus?: number;
   kpi_due_date: string | null;
   kpi_completed_at: string | null;
   kpi_rework_hours: number;
@@ -31,7 +35,6 @@ type QueueRow = Record<string, any> & {
 };
 
 type Area = { id: string; codice_area: string; nome_area: string };
-
 type EditingState = {
   id: string;
   employee_name: string;
@@ -70,18 +73,14 @@ const exclusionOptions = [
 
 function currentMonthRange() {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10), end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10) };
 }
 
 function shortDate(value: string) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short" }).format(new Date(value));
 }
 
-function clean(value: unknown) {
-  return String(value ?? "").toLowerCase();
-}
+function clean(value: unknown) { return String(value ?? "").toLowerCase(); }
 
 export default function KpiValidazione() {
   const { isSuperAdmin, isAdminArea, areaIds } = useAuth();
@@ -101,27 +100,21 @@ export default function KpiValidazione() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     setMessage(null);
-
     const [areaRes, queueRes] = await Promise.all([
       supabase.from("business_areas").select("id,codice_area,nome_area").eq("attiva", true).order("nome_area"),
-      supabase
-        .from("v_kpi_validation_queue")
-        .select("*")
-        .gte("data", periodStart)
-        .lte("data", periodEnd)
-        .order("data", { ascending: false }),
+      supabase.from("v_kpi_validation_queue").select("*").gte("data", periodStart).lte("data", periodEnd).order("data", { ascending: false }),
     ]);
-
     const firstError = areaRes.error || queueRes.error;
     if (firstError) setError(firstError.message);
     else {
       const visibleAreas = ((areaRes.data ?? []) as Area[]).filter((a) => isSuperAdmin || areaIds.includes(a.id));
-      let visibleRows = (queueRes.data ?? []) as QueueRow[];
+      let visibleRows = (queueRes.data ?? []) as unknown as QueueRow[];
       if (!isSuperAdmin) visibleRows = visibleRows.filter((r) => !r.business_area_id || areaIds.includes(r.business_area_id));
       setAreas(visibleAreas);
       setRows(visibleRows);
@@ -138,53 +131,42 @@ export default function KpiValidazione() {
       if (areaId && row.business_area_id !== areaId) return false;
       if (onlyOpen && row.kpi_validated_at) return false;
       if (!query) return true;
-      return [row.employee_name, row.employee_email, row.codice_commessa, row.descrizione_commessa, row.codice_attivita, row.nome_categoria, row.descrizione]
-        .some((value) => clean(value).includes(query));
+      return [row.employee_name, row.employee_email, row.codice_commessa, row.descrizione_commessa, row.codice_attivita, row.nome_categoria, row.descrizione].some((value) => clean(value).includes(query));
     });
   }, [areaId, onlyOpen, rows, search]);
 
   const stats = useMemo(() => {
     const total = rows.length;
     const done = rows.filter((row) => row.kpi_validated_at).length;
-    const open = total - done;
-    const critical = rows.filter((row) => row.kpi_critical_nonconformity).length;
-    const rework = rows.reduce((sum, row) => sum + Number(row.kpi_rework_hours ?? 0), 0);
-    return { total, done, open, critical, rework };
+    return { total, done, open: total - done, critical: rows.filter((row) => row.kpi_critical_nonconformity).length, rework: rows.reduce((sum, row) => sum + Number(row.kpi_rework_hours ?? 0), 0) };
   }, [rows]);
 
-  const toggleSelected = (id: string) => {
-    setSelectedIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
-  };
-
+  const toggleSelected = (id: string) => setSelectedIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
   const selectAllVisible = () => {
     const ids = filteredRows.map((row) => row.id);
     setSelectedIds((prev) => prev.length === ids.length ? [] : ids);
   };
 
-  const bulkValidateSelected = async () => {
-    if (!selectedIds.length) {
-      setError("Seleziona almeno una riga da validare.");
+  const validateRows = async (ids: string[]) => {
+    if (!ids.length) {
+      setMissingFields(["Seleziona almeno una riga da validare"]);
       return;
     }
     setSaving(true);
     setError(null);
     setMessage(null);
     const { data, error } = await supabase.rpc("kpi_bulk_validate_timesheet", {
-      p_ids: selectedIds,
+      p_ids: ids,
       p_quality_outcome: qualityQuick,
       p_note: "Validazione veloce da pannello KPI",
       p_set_completed_at: true,
     });
     setSaving(false);
     if (error) setError(error.message);
-    else {
-      setMessage(`${data ?? 0} righe validate.`);
-      await load();
-    }
+    else { setMessage(`${data ?? 0} righe validate.`); await load(); }
   };
 
   const bulkValidatePeriod = async () => {
-    if (!window.confirm("Validare tutte le righe visibili del periodo come OK?")) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -198,21 +180,14 @@ export default function KpiValidazione() {
     });
     setSaving(false);
     if (error) setError(error.message);
-    else {
-      setMessage(`${data ?? 0} righe validate sul periodo.`);
-      await load();
-    }
+    else { setMessage(`${data ?? 0} righe validate sul periodo.`); await load(); }
   };
 
   const calculate = async () => {
     setSaving(true);
     setError(null);
     setMessage(null);
-    const { data, error } = await supabase.rpc("kpi_calculate_period", {
-      p_period_type: "MONTH",
-      p_period_start: periodStart,
-      p_period_end: periodEnd,
-    });
+    const { data, error } = await supabase.rpc("kpi_calculate_period", { p_period_type: "MONTH", p_period_start: periodStart, p_period_end: periodEnd });
     setSaving(false);
     if (error) setError(error.message);
     else setMessage(`Calcolo KPI completato per ${data ?? 0} dipendenti.`);
@@ -239,6 +214,14 @@ export default function KpiValidazione() {
 
   const saveSingle = async () => {
     if (!editing) return;
+    const missing = findMissingFields([
+      { label: "Esito qualità", value: editing.kpi_quality_outcome },
+      ...(editing.kpi_critical_nonconformity ? [{ label: "Nota validazione per non conformità critica", value: editing.kpi_validation_note }] : []),
+      ...(editing.kpi_exclusion_reason ? [{ label: "Ore escluse", value: editing.kpi_excluded_hours }] : []),
+    ]);
+    if (editing.kpi_exclusion_reason && Number(editing.kpi_excluded_hours) <= 0) missing.push("Ore escluse maggiori di zero");
+    if (missing.length) { setMissingFields(missing); return; }
+
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -257,87 +240,63 @@ export default function KpiValidazione() {
     });
     setSaving(false);
     if (error) setError(error.message);
-    else {
-      setEditing(null);
-      setMessage("Riga validata correttamente.");
-      await load();
-    }
+    else { setEditing(null); setMessage("Riga validata correttamente."); await load(); }
   };
 
   return (
-    <div className="kpi-validation-page quantum-clean-page">
+    <div className="quantum-page validation-fast-page">
       <PageHeader
         title="Validazione KPI veloce"
-        description="Valida qualità, puntualità, esclusioni e rilavorazioni senza aprire una riga alla volta. Il timesheet resta invariato."
-        actions={
-          <>
-            <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
-            <button className="button" onClick={() => void calculate()} disabled={saving}><Calculator size={16} /> Calcola KPI</button>
-          </>
-        }
+        description="Valida in blocco le righe corrette. Apri il dettaglio solo per eccezioni, rilavorazioni, ritardi o esclusioni."
+        actions={<><button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button><button className="button" onClick={() => void calculate()} disabled={saving}><Calculator size={16} /> Calcola KPI</button></>}
       />
 
-      {!canValidate && <div className="alert warning"><AlertTriangle size={16} /> La validazione KPI è riservata ad Admin Area e Super Admin.</div>}
-      {error && <div className="alert error">{error}</div>}
+      {!canValidate && <div className="alert warning">La validazione KPI è riservata ad Admin Area e Super Admin.</div>}
+      {error && <div className="alert error"><AlertTriangle size={16} />{error}</div>}
       {message && <div className="alert success">{message}</div>}
 
-      <section className="validation-stats-grid">
-        <div><span>Righe periodo</span><strong>{stats.total}</strong><small>Totale approvate</small></div>
-        <div><span>Da validare</span><strong>{stats.open}</strong><small>Azionabili subito</small></div>
-        <div><span>Validate</span><strong>{stats.done}</strong><small>Pronte per calcolo</small></div>
-        <div><span>Rilavorazioni</span><strong>{stats.rework.toLocaleString("it-IT")}</strong><small>Ore imputabili</small></div>
-        <div className={stats.critical ? "danger" : ""}><span>Critiche</span><strong>{stats.critical}</strong><small>Bloccano premio</small></div>
+      <section className="kpi-grid five">
+        <div className="kpi-card"><span>Righe periodo</span><strong>{stats.total}</strong><small>Totale approvate</small></div>
+        <div className="kpi-card"><span>Da validare</span><strong>{stats.open}</strong><small>Azionabili subito</small></div>
+        <div className="kpi-card"><span>Validate</span><strong>{stats.done}</strong><small>Pronte per calcolo</small></div>
+        <div className="kpi-card"><span>Rilavorazioni</span><strong>{stats.rework.toLocaleString("it-IT")}</strong><small>Ore imputabili</small></div>
+        <div className="kpi-card"><span>Critiche</span><strong>{stats.critical}</strong><small>Bloccano premio</small></div>
       </section>
 
-      <section className="validation-command-center">
-        <div className="command-row">
+      <section className="validation-command-panel">
+        <div className="validation-filters">
           <label>Dal<input className="input" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></label>
           <label>Al<input className="input" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
-          <label>Area
-            <select className="input" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
-              <option value="">Tutte le aree</option>
-              {areas.map((area) => <option key={area.id} value={area.id}>{area.codice_area} · {area.nome_area}</option>)}
-            </select>
-          </label>
-          <label>Esito rapido
-            <select className="input" value={qualityQuick} onChange={(e) => setQualityQuick(e.target.value)}>
-              {qualityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
+          <label>Area<select className="input" value={areaId} onChange={(e) => setAreaId(e.target.value)}><option value="">Tutte le aree</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.codice_area} · {area.nome_area}</option>)}</select></label>
+          <label>Esito rapido<select className="input" value={qualityQuick} onChange={(e) => setQualityQuick(e.target.value)}>{qualityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         </div>
-        <div className="command-row second">
-          <div className="search-wide"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca dipendente, commessa, attività, descrizione..." />{search && <button onClick={() => setSearch("")}><X size={14} /></button>}</div>
-          <label className="toggle-row"><input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> Solo da validare</label>
+        <div className="ts-search-field"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca dipendente, commessa, attività, descrizione..." />{search && <button type="button" onClick={() => setSearch("")}><X size={14} /></button>}</div>
+        <div className="validation-actions-row">
+          <label className="check-inline"><input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> Solo da validare</label>
           <button className="button secondary" onClick={selectAllVisible}>{selectedIds.length ? "Deseleziona" : "Seleziona visibili"}</button>
-          <button className="button" disabled={!canValidate || saving || !selectedIds.length} onClick={() => void bulkValidateSelected()}><CheckCircle2 size={16} /> Valida selezionate ({selectedIds.length})</button>
-          <button className="button secondary" disabled={!canValidate || saving} onClick={() => void bulkValidatePeriod()}><Sparkles size={16} /> Valida tutto OK</button>
+          <button className="button secondary" onClick={() => void validateRows(selectedIds)} disabled={saving}><CheckCircle2 size={16} /> Valida selezionate ({selectedIds.length})</button>
+          <button className="button" onClick={() => void bulkValidatePeriod()} disabled={saving}><Sparkles size={16} /> Valida tutto OK</button>
         </div>
       </section>
 
       <section className="validation-list">
         {filteredRows.map((row) => (
-          <article key={row.id} className={`validation-card ${row.kpi_validated_at ? "done" : "open"} ${row.kpi_critical_nonconformity ? "critical" : ""}`}>
-            <label className="validation-check"><input type="checkbox" checked={selectedIds.includes(row.id)} onChange={() => toggleSelected(row.id)} /></label>
+          <article className={`validation-row-card ${row.kpi_validated_at ? "validated" : "open"}`} key={row.id}>
+            <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={() => toggleSelected(row.id)} />
             <div className="validation-date"><strong>{shortDate(row.data)}</strong><span>{row.ore} ore</span></div>
             <div className="validation-main">
-              <div className="validation-title-row">
-                <div>
-                  <h3>{row.employee_name}</h3>
-                  <p>{row.codice_commessa} · {row.codice_attivita} · {row.codice_area}</p>
-                </div>
-                <span className={`status-pill ${row.kpi_validated_at ? "approvato" : "bozza"}`}>{row.kpi_validated_at ? "Validata" : "Da validare"}</span>
-              </div>
-              <p className="validation-description">{row.descrizione || "Nessuna descrizione inserita dal dipendente."}</p>
-              <div className="validation-tags">
-                <span>Qualità: {row.kpi_quality_outcome}</span>
-                <span>Scadenza: {row.kpi_due_date ?? "non impostata"}</span>
-                <span>Rilav.: {row.kpi_rework_hours ?? 0}</span>
-                {row.kpi_exclusion_reason && <span>Esclusa: {row.kpi_exclusion_reason}</span>}
-              </div>
+              <h3>{row.employee_name}</h3>
+              <p>{row.codice_commessa} · {row.codice_attivita} · {row.codice_area}</p>
+              <small>{row.descrizione || "Nessuna descrizione inserita dal dipendente."}</small>
             </div>
-            <div className="validation-actions">
-              <button className="button secondary" disabled={!canValidate} onClick={() => openEdit(row)}><Save size={15} /> Dettaglio</button>
-              <button className="button" disabled={!canValidate} onClick={async () => { setSelectedIds([row.id]); await bulkValidateSelected(); }}><CheckCircle2 size={15} /> OK</button>
+            <div className="validation-status">
+              <span className={row.kpi_validated_at ? "status-pill ok" : "status-pill da-correggere"}>{row.kpi_validated_at ? "Validata" : "Da validare"}</span>
+              <small>Qualità: {row.kpi_quality_outcome}</small>
+              <small>Scadenza: {row.kpi_due_date ?? "non impostata"}</small>
+            </div>
+            <div className="row-actions">
+              <button className="button secondary" onClick={() => openEdit(row)}>Dettaglio</button>
+              <button className="button" onClick={() => void validateRows([row.id])}>OK</button>
             </div>
           </article>
         ))}
@@ -345,43 +304,27 @@ export default function KpiValidazione() {
       </section>
 
       {editing && (
-        <div className="modal-backdrop">
-          <div className="modal large pro-modal kpi-fast-modal">
-            <div className="modal-header">
-              <div>
-                <span className="eyebrow">Dettaglio validazione</span>
-                <h3>{editing.employee_name}</h3>
-                <p className="muted">{editing.codice_commessa} · {editing.codice_attivita}</p>
-              </div>
-              <button className="icon-button" onClick={() => setEditing(null)}>×</button>
-            </div>
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal large pro-modal">
+            <div className="modal-header"><div><span className="eyebrow">Dettaglio validazione</span><h3>{editing.employee_name}</h3><p>{editing.codice_commessa} · {editing.codice_attivita}</p></div><button className="icon-button" onClick={() => setEditing(null)}>×</button></div>
             <div className="form-grid refined">
-              <label>Esito qualità
-                <select className="input" value={editing.kpi_quality_outcome} onChange={(e) => setEditing({ ...editing, kpi_quality_outcome: e.target.value })}>
-                  {qualityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
-              </label>
-              <label>Bonus qualità<input className="input" type="number" min={0} max={20} step="1" value={editing.kpi_quality_bonus} onChange={(e) => setEditing({ ...editing, kpi_quality_bonus: Number(e.target.value) })} /></label>
-              <label>Ore rilavorazione<input className="input" type="number" min={0} step="0.25" value={editing.kpi_rework_hours} onChange={(e) => setEditing({ ...editing, kpi_rework_hours: Number(e.target.value) })} /></label>
+              <label>Esito qualità<select className="input" value={editing.kpi_quality_outcome} onChange={(e) => setEditing({ ...editing, kpi_quality_outcome: e.target.value })}>{qualityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>Bonus qualità<input className="input" type="number" value={editing.kpi_quality_bonus} onChange={(e) => setEditing({ ...editing, kpi_quality_bonus: Number(e.target.value) })} /></label>
+              <label>Ore rilavorazione<input className="input" type="number" step="0.25" value={editing.kpi_rework_hours} onChange={(e) => setEditing({ ...editing, kpi_rework_hours: Number(e.target.value) })} /></label>
               <label>Scadenza KPI<input className="input" type="date" value={editing.kpi_due_date} onChange={(e) => setEditing({ ...editing, kpi_due_date: e.target.value })} /></label>
               <label>Completata il<input className="input" type="datetime-local" value={editing.kpi_completed_at} onChange={(e) => setEditing({ ...editing, kpi_completed_at: e.target.value })} /></label>
-              <label>Motivo esclusione
-                <select className="input" value={editing.kpi_exclusion_reason} onChange={(e) => setEditing({ ...editing, kpi_exclusion_reason: e.target.value })}>
-                  {exclusionOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
-              </label>
-              <label>Ore escluse<input className="input" type="number" min={0} step="0.25" value={editing.kpi_excluded_hours} onChange={(e) => setEditing({ ...editing, kpi_excluded_hours: Number(e.target.value) })} /></label>
+              <label>Motivo esclusione<select className="input" value={editing.kpi_exclusion_reason} onChange={(e) => setEditing({ ...editing, kpi_exclusion_reason: e.target.value })}>{exclusionOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>Ore escluse<input className="input" type="number" step="0.25" value={editing.kpi_excluded_hours} onChange={(e) => setEditing({ ...editing, kpi_excluded_hours: Number(e.target.value) })} /></label>
               <label className="check-row"><input type="checkbox" checked={editing.kpi_priority} onChange={(e) => setEditing({ ...editing, kpi_priority: e.target.checked })} /> Attività prioritaria</label>
               <label className="check-row"><input type="checkbox" checked={editing.kpi_critical_nonconformity} onChange={(e) => setEditing({ ...editing, kpi_critical_nonconformity: e.target.checked })} /> Non conformità critica</label>
-              <label className="full">Nota validazione<textarea className="input" value={editing.kpi_validation_note} onChange={(e) => setEditing({ ...editing, kpi_validation_note: e.target.value })} /></label>
+              <label className="full">Nota validazione<textarea className="input textarea-large" value={editing.kpi_validation_note} onChange={(e) => setEditing({ ...editing, kpi_validation_note: e.target.value })} /></label>
             </div>
-            <div className="modal-actions">
-              <button className="button secondary" onClick={() => setEditing(null)}>Annulla</button>
-              <button className="button" onClick={() => void saveSingle()} disabled={saving}><Save size={16} /> {saving ? "Salvataggio..." : "Salva validazione"}</button>
-            </div>
+            <div className="modal-actions"><button className="button secondary" onClick={() => setEditing(null)}>Annulla</button><button className="button" onClick={() => void saveSingle()} disabled={saving}><Save size={16} /> Salva validazione</button></div>
           </div>
         </div>
       )}
+
+      {missingFields.length > 0 && <MissingFieldsModal fields={missingFields} onClose={() => setMissingFields([])} />}
     </div>
   );
 }
