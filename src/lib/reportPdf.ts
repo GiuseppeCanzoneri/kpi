@@ -147,3 +147,25 @@ export function downloadTimesheetCsv(rows: TimesheetView[], filename: string) {
   link.click();
   document.body.removeChild(link);
 }
+
+/**
+ * Compatibilità con vecchie pagine Report.tsx.
+ * Alcune versioni del frontend importano ancora generateTimesheetPdf.
+ * Manteniamo questo alias per evitare errori di build.
+ */
+export function generateTimesheetPdf(
+  rows: TimesheetView[],
+  arg2?: PdfFilters | number | string,
+  arg3?: number,
+  arg4?: string
+) {
+  const now = new Date();
+  const filters: PdfFilters =
+    typeof arg2 === "object" && arg2 !== null
+      ? arg2
+      : typeof arg2 === "number"
+        ? { month: arg2, year: typeof arg3 === "number" ? arg3 : now.getFullYear(), title: arg4 ?? "Report ore registrate" }
+        : { month: now.getMonth() + 1, year: now.getFullYear(), title: typeof arg2 === "string" ? arg2 : "Report ore registrate" };
+
+  return createTimesheetReportDoc(rows, filters);
+}
