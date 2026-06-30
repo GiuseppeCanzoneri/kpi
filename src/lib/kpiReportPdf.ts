@@ -78,7 +78,7 @@ function splitCell(doc: jsPDF, value: unknown, width: number): string[] {
   });
 }
 
-function alignX(doc: jsPDF, text: string, x: number, width: number, align: TableColumn["align"]) {
+function alignX(x: number, width: number, align: TableColumn["align"]) {
   if (align === "right") return x + width - 2;
   if (align === "center") return x + width / 2;
   return x + 2;
@@ -93,7 +93,7 @@ function drawTableHeader(doc: jsPDF, columns: TableColumn[], y: number, headerHe
   doc.setFontSize(7.5);
   columns.forEach((column) => {
     doc.rect(x, y, column.width, headerHeight, "FD");
-    doc.text(column.header.toUpperCase(), alignX(doc, column.header, x, column.width, column.align), y + 5.8, { align: column.align ?? "left" });
+    doc.text(column.header.toUpperCase(), alignX(x, column.width, column.align), y + 5.8, { align: column.align ?? "left" });
     x += column.width;
   });
   return y + headerHeight;
@@ -133,7 +133,7 @@ function drawManualTable(doc: jsPDF, options: TableOptions) {
       const lines = linesByCell[columnIndex] ?? [""];
       lines.slice(0, 15).forEach((line, lineIndex) => {
         const yy = y + rowPadding + 3 + lineIndex * lineHeight;
-        const xx = alignX(doc, line, x, column.width, column.align);
+        const xx = alignX(x, column.width, column.align);
         doc.text(line, xx, yy, { align: column.align ?? "left" });
       });
       x += column.width;
