@@ -609,7 +609,31 @@ export default function Timesheet() {
               <button className="icon-button" onClick={() => setForm(null)} aria-label="Chiudi"><X size={18} /></button>
             </div>
 
-            <div className="ts-flow-preview">
+            
+
+            <div className="ts-form-sections">
+              <section className="ts-form-section">
+                <div className="ts-section-head">
+                  <UserRound size={18} />
+                  <div>
+                    <h4>1. Chi ha lavorato</h4>
+                    <p>Dipendente, data e sede operativa.</p>
+                  </div>
+                </div>
+                <div className="form-grid refined">
+                  {canChooseEmployee ? (
+                    <label>Dipendente *<Select value={form.employee_id} onChange={handleEmployeeChange} options={employees.map((e) => ({ value: e.id, label: `${fullEmployeeName(e)} · ${e.email}` }))} /></label>
+                  ) : (
+                    <label>Dipendente<input className="input" value={currentEmployee ? `${fullEmployeeName(currentEmployee)} · ${currentEmployee.email}` : "Dipendente non collegato"} disabled /></label>
+                  )}
+                   <label>Data *<input className="input" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} /></label>
+                  <label>Sede<Select value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} placeholder="Sede non obbligatoria" options={locations.map((l) => ({ value: l.id, label: l.nome_sede }))} /></label>
+                  <label>Ore *<input className="input" type="number" min="0.25" step="0.25" value={form.ore} onChange={(e) => setForm({ ...form, ore: Number(e.target.value) })} /></label>
+                </div>
+              </section>
+
+
+<div className="ts-flow-preview">
               <div>
                 <Building2 size={18} />
                 <span>Società datrice</span>
@@ -627,27 +651,6 @@ export default function Timesheet() {
                 {formIsIntercompany ? "Infragruppo" : "Interno"}
               </div>
             </div>
-
-            <div className="ts-form-sections">
-              <section className="ts-form-section">
-                <div className="ts-section-head">
-                  <UserRound size={18} />
-                  <div>
-                    <h4>1. Chi ha lavorato</h4>
-                    <p>Dipendente, data e sede operativa.</p>
-                  </div>
-                </div>
-                <div className="form-grid refined">
-                  <label>Data *<input className="input" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} /></label>
-                  {canChooseEmployee ? (
-                    <label>Dipendente *<Select value={form.employee_id} onChange={handleEmployeeChange} options={employees.map((e) => ({ value: e.id, label: `${fullEmployeeName(e)} · ${e.email}` }))} /></label>
-                  ) : (
-                    <label>Dipendente<input className="input" value={currentEmployee ? `${fullEmployeeName(currentEmployee)} · ${currentEmployee.email}` : "Dipendente non collegato"} disabled /></label>
-                  )}
-                  <label>Sede<Select value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} placeholder="Sede non obbligatoria" options={locations.map((l) => ({ value: l.id, label: l.nome_sede }))} /></label>
-                  <label>Ore *<input className="input" type="number" min="0.25" step="0.25" value={form.ore} onChange={(e) => setForm({ ...form, ore: Number(e.target.value) })} /></label>
-                </div>
-              </section>
 
               <section className="ts-form-section">
                 <div className="ts-section-head">
