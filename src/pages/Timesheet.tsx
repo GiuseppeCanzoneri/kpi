@@ -633,7 +633,25 @@ export default function Timesheet() {
               </section>
 
 
-<div className="ts-flow-preview">
+
+
+              <section className="ts-form-section">
+                <div className="ts-section-head">
+                  <Layers3 size={18} />
+                  <div>
+                    <h4>2. Dove imputare le ore</h4>
+                    <p>Società beneficiaria, area, centro costo e commessa.</p>
+                  </div>
+                </div>
+                <div className="form-grid refined">
+                  <label>Società beneficiaria *<Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: `${c.codice_societa} · ${c.ragione_sociale}` }))} /></label>
+                  <label>Area *<Select value={form.business_area_id} onChange={(v) => setForm((prev) => prev ? applyAreaDefaults({ ...prev, business_area_id: v, activity_category_id: "", cost_center_id: "", project_id: "" }) : prev)} options={areas.map((a) => ({ value: a.id, label: `${a.codice_area} · ${a.nome_area}` }))} /></label>
+                  <label>Centro costo<Select value={form.cost_center_id} onChange={(v) => setForm({ ...form, cost_center_id: v })} placeholder="Centro costo facoltativo" options={filteredCostCenters.map((c) => ({ value: c.id, label: `${c.codice_centro_costo} · ${c.nome_centro_costo}` }))} /></label>
+                  <label>Commessa *<Select value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })} options={filteredProjects.map((p) => ({ value: p.id, label: `${p.codice_commessa} · ${p.descrizione_commessa}` }))} /></label>
+                </div>
+              </section>
+
+              <div className="ts-flow-preview">
               <div>
                 <Building2 size={18} />
                 <span>Società datrice</span>
@@ -651,22 +669,6 @@ export default function Timesheet() {
                 {formIsIntercompany ? "Infragruppo" : "Interno"}
               </div>
             </div>
-
-              <section className="ts-form-section">
-                <div className="ts-section-head">
-                  <Layers3 size={18} />
-                  <div>
-                    <h4>2. Dove imputare le ore</h4>
-                    <p>Società beneficiaria, area, centro costo e commessa.</p>
-                  </div>
-                </div>
-                <div className="form-grid refined">
-                  <label>Società beneficiaria *<Select value={form.beneficiary_company_id} onChange={(v) => setForm({ ...form, beneficiary_company_id: v, project_id: "" })} options={companies.map((c) => ({ value: c.id, label: `${c.codice_societa} · ${c.ragione_sociale}` }))} /></label>
-                  <label>Area *<Select value={form.business_area_id} onChange={(v) => setForm((prev) => prev ? applyAreaDefaults({ ...prev, business_area_id: v, activity_category_id: "", cost_center_id: "", project_id: "" }) : prev)} options={areas.map((a) => ({ value: a.id, label: `${a.codice_area} · ${a.nome_area}` }))} /></label>
-                  <label>Centro costo<Select value={form.cost_center_id} onChange={(v) => setForm({ ...form, cost_center_id: v })} placeholder="Centro costo facoltativo" options={filteredCostCenters.map((c) => ({ value: c.id, label: `${c.codice_centro_costo} · ${c.nome_centro_costo}` }))} /></label>
-                  <label>Commessa *<Select value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })} options={filteredProjects.map((p) => ({ value: p.id, label: `${p.codice_commessa} · ${p.descrizione_commessa}` }))} /></label>
-                </div>
-              </section>
 
               <section className="ts-form-section">
                 <div className="ts-section-head">
