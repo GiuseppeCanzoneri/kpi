@@ -139,7 +139,7 @@ export default function KpiPerformance() {
         actions={
           <>
             <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
-            {canAdmin && <button className="button" onClick={() => void calculate()} disabled={loading}>Calcola periodo</button>}
+            <button className="button" onClick={() => void calculate()} disabled={loading}>Calcola periodo</button>
             <button className="button secondary" onClick={previewLeaderboard} disabled={!rows.length}><Eye size={16} /> Anteprima classifica</button>
           </>
         }
