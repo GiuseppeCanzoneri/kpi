@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Eye, HelpCircle, Info, RefreshCw, Trophy } from "lucide-react";
+import { Download, Eye, Info, RefreshCw, Trophy } from "lucide-react";
 import { PdfPreviewModal, type PdfPreviewState } from "../components/PdfPreviewModal";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../hooks/useAuth";
@@ -19,8 +19,47 @@ function currentMonthRange() {
   };
 }
 
-function levelClass(level: string) {
+function levelClass(level: string | null | undefined) {
   return `kpi-level ${String(level || "basso").toLowerCase().replaceAll(" ", "-")}`;
+}
+
+function score(row: KpiDashboardRow | null | undefined) {
+  return Number(row?.performance_index ?? 0);
+}
+
+function areaName(row: KpiDashboardRow) {
+  return row.nome_gruppo || row.nome_area || row.codice_area || "Senza area";
+}
+
+function sortOverall(rows: KpiDashboardRow[]) {
+  return [...rows].sort((a, b) => {
+    const byScore = score(b) - score(a);
+    if (byScore !== 0) return byScore;
+
+    const byQuality = Number(b.k4_qualita ?? 0) - Number(a.k4_qualita ?? 0);
+    if (byQuality !== 0) return byQuality;
+
+    const byDeadline = Number(b.k5_puntualita ?? 0) - Number(a.k5_puntualita ?? 0);
+    if (byDeadline !== 0) return byDeadline;
+
+    const byProduction = Number(b.k2_produzione ?? 0) - Number(a.k2_produzione ?? 0);
+    if (byProduction !== 0) return byProduction;
+
+    return String(a.employee_name ?? "").localeCompare(String(b.employee_name ?? ""));
+  });
+}
+
+function groupByArea(rows: KpiDashboardRow[]) {
+  const grouped = new Map<string, KpiDashboardRow[]>();
+
+  rows.forEach((row) => {
+    const key = areaName(row);
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  });
+
+  return [...grouped.entries()]
+    .map(([area, areaRows]) => ({ area, rows: sortOverall(areaRows) }))
+    .sort((a, b) => a.area.localeCompare(b.area));
 }
 
 const kpiKeys = [
@@ -30,80 +69,6 @@ const kpiKeys = [
   ["K4", "k4_qualita"],
   ["K5", "k5_puntualita"],
 ] as const;
-
-function metricExplanation(code: string) {
-  switch (code) {
-    case "K1":
-      return "Ore produttive validate rispetto alle ore disponibili nette e al target del ruolo.";
-    case "K2":
-      return "Produzione standard ponderata: tempo standard attività × complessità, confrontato con il target del ruolo.";
-    case "K3":
-      return "Efficienza: ore standard prodotte divise per ore effettivamente usate.";
-    case "K4":
-      return "Qualità: esito validazione, integrazioni, respinte, rilavorazioni e criticità.";
-    case "K5":
-      return "Scadenze: attività completate entro il termine, escluse le cause esterne documentate.";
-    default:
-      return "Indicatore KPI.";
-  }
-}
-
-function diagnose(row: KpiDashboardRow | null) {
-  if (!row) return [];
-  const items: { title: string; text: string; tone?: "ok" | "warn" | "bad" }[] = [];
-
-  if (Number(row.k1_saturazione ?? 0) < 60) {
-    items.push({
-      title: "K1 basso",
-      text: `Ore produttive ${fmt(row.productive_hours)} su ore disponibili nette ${fmt(row.available_hours_net)}. Se il periodo è un mese intero con poche ore, K1 resta basso.`,
-      tone: "bad",
-    });
-  } else {
-    items.push({ title: "K1 positivo", text: "Le ore produttive validate sono coerenti con il target del ruolo.", tone: "ok" });
-  }
-
-  if (Number(row.k2_produzione ?? 0) < 60) {
-    items.push({
-      title: "K2 basso",
-      text: `Produzione standard ${fmt(row.standard_units)}. Controlla tempo standard e complessità delle attività: una riga validata “eccellente” non aumenta il volume prodotto.`,
-      tone: "bad",
-    });
-  } else {
-    items.push({ title: "K2 positivo", text: "La produzione standard ponderata è sufficiente rispetto al target.", tone: "ok" });
-  }
-
-  if (Number(row.k3_efficienza ?? 0) < 70) {
-    items.push({
-      title: "K3 basso",
-      text: `Efficienza calcolata su standard ${fmt(row.standard_units)} rispetto a ore produttive ${fmt(row.productive_hours)}. Se standard < ore usate, K3 scende.`,
-      tone: "warn",
-    });
-  } else {
-    items.push({ title: "K3 positivo", text: "Le ore standard prodotte sono coerenti con le ore effettive.", tone: "ok" });
-  }
-
-  if (Number(row.k4_qualita ?? 0) >= 85) {
-    items.push({ title: "K4 positivo", text: "La validazione qualità è corretta. Questo però incide solo su Qualità, non su produzione e saturazione.", tone: "ok" });
-  }
-
-  if (Number(row.k5_puntualita ?? 0) >= 85) {
-    items.push({ title: "K5 positivo", text: "Le scadenze risultano rispettate o non penalizzanti.", tone: "ok" });
-  }
-
-  if (Number(row.working_days ?? 0) < 15 && row.period_type === "MONTH") {
-    items.push({
-      title: "Dati insufficienti",
-      text: `Giornate lavorate rilevate: ${fmt(row.working_days)}. Per il mese servono dati completi, altrimenti il Top performer resta bloccato.`,
-      tone: "warn",
-    });
-  }
-
-  if (row.eligibility_reason) {
-    items.push({ title: "Motivo blocco", text: row.eligibility_reason, tone: "warn" });
-  }
-
-  return items;
-}
 
 export default function KpiPerformance() {
   const { isSuperAdmin, isAdminArea, user } = useAuth();
@@ -122,7 +87,13 @@ export default function KpiPerformance() {
   const [infoMetric, setInfoMetric] = useState<KpiMetricSetting | null>(null);
   const [pdfPreview, setPdfPreview] = useState<PdfPreviewState | null>(null);
 
-  const metricMap = useMemo(() => new Map(metrics.map((metric) => [metric.code, metric])), [metrics]);
+  const metricMap = useMemo(() => new Map(metrics.map((m) => [m.code, m])), [metrics]);
+  const overallRows = useMemo(() => sortOverall(rows), [rows]);
+  const areaGroups = useMemo(() => groupByArea(rows), [rows]);
+  const bestOverall = overallRows[0] ?? null;
+  const areaWinners = useMemo(() => areaGroups.map((group) => ({ area: group.area, winner: group.rows[0] })).filter((item) => item.winner), [areaGroups]);
+  const topPerformers = useMemo(() => sortOverall(rows.filter((row) => row.is_top_performer || row.eligible)), [rows]);
+  const topPerformer = topPerformers[0] ?? null;
 
   const closePreview = () => {
     revokePdfPreview(pdfPreview);
@@ -132,6 +103,7 @@ export default function KpiPerformance() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     const [metricRes, leaderboardRes] = await Promise.all([
       supabase.from("kpi_metric_settings").select("*").order("code"),
       supabase
@@ -143,28 +115,35 @@ export default function KpiPerformance() {
         .order("nome_gruppo", { ascending: true })
         .order("group_rank", { ascending: true }),
     ]);
+
     const firstError = metricRes.error || leaderboardRes.error;
     if (firstError) {
       setError(firstError.message);
-    } else {
-      const all = (leaderboardRes.data ?? []) as unknown as KpiDashboardRow[];
-      const visible = canAdmin ? all : all.filter((row) => row.employee_email?.toLowerCase() === user?.email?.toLowerCase());
-      setMetrics((metricRes.data ?? []) as unknown as KpiMetricSetting[]);
-      setRows(visible);
-      setSelected((prev) => visible.find((row) => row.id === prev?.id) ?? visible[0] ?? null);
+      setLoading(false);
+      return;
     }
+
+    const all = (leaderboardRes.data ?? []) as unknown as KpiDashboardRow[];
+    const visible = canAdmin ? all : all.filter((row) => row.employee_email?.toLowerCase() === user?.email?.toLowerCase());
+    const sortedVisible = sortOverall(visible);
+
+    setMetrics((metricRes.data ?? []) as unknown as KpiMetricSetting[]);
+    setRows(sortedVisible);
+    setSelected((prev) => sortedVisible.find((row) => row.id === prev?.id) ?? sortedVisible[0] ?? null);
     setLoading(false);
   }, [canAdmin, periodEnd, periodStart, periodType, user?.email]);
 
   const calculate = async () => {
     setLoading(true);
     setError(null);
-    const { error } = await supabase.rpc("kpi_calculate_period", {
+
+    const { error: rpcError } = await supabase.rpc("kpi_calculate_period", {
       p_period_type: periodType,
       p_period_start: periodStart,
       p_period_end: periodEnd,
     });
-    if (error) setError(error.message);
+
+    if (rpcError) setError(rpcError.message);
     await load();
     setLoading(false);
   };
@@ -179,16 +158,18 @@ export default function KpiPerformance() {
         setTrace([]);
         return;
       }
-      const { data } = await supabase.from("v_kpi_score_trace").select("*").eq("score_id", selected.id).order("data", { ascending: false });
+
+      const { data } = await supabase
+        .from("v_kpi_score_trace")
+        .select("*")
+        .eq("score_id", selected.id)
+        .order("data", { ascending: false });
+
       setTrace((data ?? []) as unknown as KpiTraceRow[]);
     };
+
     void run();
   }, [selected]);
-
-  const topPerformers = useMemo(() => rows.filter((row) => row.is_top_performer || row.eligible), [rows]);
-  const firstClassified = rows[0] ?? null;
-  const topPerformer = topPerformers[0] ?? null;
-  const selectedDiagnosis = useMemo(() => diagnose(selected), [selected]);
 
   const previewIndividual = () => {
     if (!selected) return;
@@ -197,83 +178,107 @@ export default function KpiPerformance() {
   };
 
   const previewLeaderboard = () => {
-    const doc = createKpiLeaderboardPdf(rows, "Classifica KPI");
-    setPdfPreview(makePdfPreview(doc, "classifica-kpi.pdf", "Classifica KPI"));
+    const doc = createKpiLeaderboardPdf(overallRows, "Classifica KPI generale e per area");
+    setPdfPreview(makePdfPreview(doc, "classifica-kpi-generale-area.pdf", "Classifica KPI generale e per area"));
   };
 
   return (
-    <div className="page kpi-performance-page kpi-performance-clear-page">
-      <section className="pro-header kpi-performance-hero">
+    <div className="page kpi-performance-page kpi-rankings-page">
+      <div className="pro-header hero-dashboard">
         <div>
           <span className="eyebrow">Modulo KPI</span>
           <h2>KPI Performance</h2>
           <p>
-            Il cruscotto separa classifica, primo classificato e Top performer. Un esito qualità “eccellente” non rende automaticamente eccellenti K1, K2 e K3.
+            Classifica generale, migliori per area e scheda individuale. Il primo classificato generale è calcolato sul PI più alto del periodo, non sul rank del singolo gruppo.
           </p>
         </div>
         <div className="page-actions">
-          <button className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16} /> Aggiorna</button>
-          <button className="button" onClick={() => void calculate()} disabled={loading}><RefreshCw size={16} /> Calcola periodo</button>
-          <button className="button secondary" onClick={previewLeaderboard} disabled={!rows.length}><Eye size={16} /> Anteprima classifica</button>
+          <button className="button secondary" onClick={() => void load()} disabled={loading}>
+            <RefreshCw size={16} /> Aggiorna
+          </button>
+          {canAdmin && (
+            <button className="button" onClick={() => void calculate()} disabled={loading}>
+              <RefreshCw size={16} /> Calcola periodo
+            </button>
+          )}
+          <button className="button secondary" onClick={previewLeaderboard} disabled={!overallRows.length}>
+            <Eye size={16} /> Anteprima PDF
+          </button>
         </div>
-      </section>
+      </div>
 
-      <section className="filters-bar kpi-performance-filters">
-        <label>Tipo periodo
-          <select className="input small" value={periodType} onChange={(event) => setPeriodType(event.target.value as KpiPeriodType)}>
+      <div className="filters-bar pro-filters">
+        <label>
+          Tipo periodo
+          <select className="input small" value={periodType} onChange={(e) => setPeriodType(e.target.value as KpiPeriodType)}>
             <option value="WEEK">Settimana</option>
             <option value="MONTH">Mese</option>
           </select>
         </label>
-        <label>Dal <input className="input small" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></label>
-        <label>Al <input className="input small" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></label>
-        <span className="filters-summary"><strong>{rows.length}</strong> valutabili · <strong>{topPerformers.length}</strong> top performer</span>
-      </section>
+        <label>
+          Dal
+          <input className="input small" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+        </label>
+        <label>
+          Al
+          <input className="input small" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+        </label>
+        <span className="filters-summary">
+          <strong>{overallRows.length}</strong> valutabili · <strong>{topPerformers.length}</strong> top performer
+        </span>
+      </div>
 
       {error && <div className="alert error">{error}</div>}
-      {loading && <div className="loading-card"><div className="spinner" />Caricamento KPI...</div>}
+      {loading && <div className="loading-card"><span className="spinner" /> Caricamento KPI...</div>}
 
-      <section className="kpi-performance-top-grid">
-        <div className="kpi-recognition-card">
-          <div className="panel-title"><Trophy size={18} /> Riconoscimento</div>
+      <div className="kpi-rank-hero-grid">
+        <section className="panel kpi-hero-award">
+          <span className="eyebrow"><Trophy size={16} /> Migliore assoluto</span>
+          <h3>{bestOverall ? bestOverall.employee_name : "Nessun dato"}</h3>
+          {bestOverall ? (
+            <>
+              <p>
+                Primo nella <strong>classifica generale</strong>. Area: <strong>{areaName(bestOverall)}</strong>. Non coincide automaticamente con Top performer.
+              </p>
+              <div className="kpi-absolute-score">{fmt(bestOverall.performance_index)}/100</div>
+              <span className={levelClass(bestOverall.livello)}>{bestOverall.livello}</span>
+            </>
+          ) : (
+            <p>Calcola il periodo per generare la classifica.</p>
+          )}
+        </section>
+
+        <section className="panel kpi-hero-award">
+          <span className="eyebrow"><Trophy size={16} /> Riconoscimento</span>
           <h3>{topPerformer ? "Top performer del periodo" : "Nessun top performer"}</h3>
           {topPerformer ? (
-            <div className="kpi-winner-box">
-              <div className="kpi-avatar">{topPerformer.photo_url ? <img src={topPerformer.photo_url} alt={topPerformer.employee_name} /> : topPerformer.employee_name.slice(0, 1)}</div>
-              <div><strong>{topPerformer.employee_name}</strong><span>{topPerformer.nome_gruppo ?? "Gruppo non assegnato"} · PI {fmt(topPerformer.performance_index)}/100</span></div>
+            <div className="kpi-top-performer-card">
+              <div className="kpi-avatar small-avatar">{topPerformer.photo_url ? <img src={topPerformer.photo_url} alt="" /> : topPerformer.employee_name.slice(0, 1)}</div>
+              <div>
+                <strong>{topPerformer.employee_name}</strong>
+                <p>{areaName(topPerformer)} · PI {fmt(topPerformer.performance_index)}/100</p>
+              </div>
             </div>
           ) : (
             <p>Nessuno soddisfa tutti i requisiti: PI almeno 80/100, KPI sopra soglia, timesheet completo e dati sufficienti.</p>
           )}
-        </div>
+        </section>
+      </div>
 
-        <div className="kpi-recognition-card">
-          <div className="panel-title"><Trophy size={18} /> Classifica</div>
-          <h3>Primo classificato</h3>
-          {firstClassified ? (
-            <div className="kpi-first-box">
-              <strong>{firstClassified.employee_name}</strong>
-              <p>È il punteggio più alto del periodo, ma non coincide sempre con Top performer.</p>
-              <span>{fmt(firstClassified.performance_index)}/100</span>
-            </div>
-          ) : <p>Calcola il periodo per generare la classifica.</p>}
-        </div>
-      </section>
-
-      <section className="panel kpi-metrics-clear-panel">
-        <div className="panel-header">
+      <section className="panel kpi-section-card">
+        <div className="panel-header align-start">
           <div>
             <h3>Cinque indicatori KPI</h3>
             <p>Ogni indicatore misura una cosa diversa. Qualità e Scadenze non sostituiscono Tempo produttivo, Produzione ed Efficienza.</p>
           </div>
         </div>
-        <div className="kpi-metric-grid-clear">
+        <div className="kpi-general-metrics-grid">
           {kpiKeys.map(([code, key]) => {
             const setting = metricMap.get(code);
-            const value = firstClassified ? Number((firstClassified as unknown as Record<string, unknown>)[key] ?? 0) : 0;
+            const value = bestOverall ? Number(bestOverall[key] ?? 0) : 0;
             return (
-              <button key={code} type="button" className="kpi-metric-card-clear" onClick={() => setting && setInfoMetric(setting)}>
-                <span className="kpi-code">{code}<Info size={15} /></span>
+              <button className="kpi-general-metric-card" key={code} type="button" onClick={() => setting && setInfoMetric(setting)}>
+                <span className="kpi-code-pill">{code} <Info size={13} /></span>
                 <strong>{setting?.nome_breve ?? setting?.nome ?? code}</strong>
                 <b>{fmt(value)}</b>
                 <small>Soglia {fmt(setting?.soglia_minima ?? 0)} · Peso {fmt(setting?.peso_percentuale ?? 0)}%</small>
@@ -283,28 +288,45 @@ export default function KpiPerformance() {
         </div>
       </section>
 
-      <section className="kpi-layout-two kpi-performance-main-layout">
-        <div className="panel flush-panel">
-          <div className="panel-header kpi-table-header-clear">
+      <div className="kpi-layout-two rankings-layout">
+        <section className="panel kpi-section-card">
+          <div className="panel-header align-start">
             <div>
-              <h3>Classifica completa</h3>
-              <p>Ordine dal punteggio più alto. I punteggi bassi sono visibili solo nelle pagine autorizzate.</p>
+              <h3>Classifica generale</h3>
+              <p>Ordine unico dal punteggio più alto al più basso, indipendente dall’area.</p>
             </div>
-            <button className="button secondary" onClick={previewLeaderboard} disabled={!rows.length}><Eye size={16} /> Anteprima PDF</button>
+            <button className="button secondary" onClick={previewLeaderboard} disabled={!overallRows.length}>
+              <Eye size={16} /> Anteprima PDF
+            </button>
           </div>
-          <div className="table-wrap">
-            <table className="data-table compact">
+
+          <div className="table-wrap elevated-table">
+            <table className="data-table compact kpi-leaderboard-table">
               <thead>
                 <tr>
-                  <th>Rank</th><th>Dipendente</th><th>Gruppo</th><th>PI</th><th>Livello</th><th>K1</th><th>K2</th><th>K3</th><th>K4</th><th>K5</th><th>Stato</th>
+                  <th>Rank generale</th>
+                  <th>Dipendente</th>
+                  <th>Area</th>
+                  <th>PI</th>
+                  <th>Livello</th>
+                  <th>K1</th>
+                  <th>K2</th>
+                  <th>K3</th>
+                  <th>K4</th>
+                  <th>K5</th>
+                  <th>Stato</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {overallRows.map((row, index) => (
                   <tr key={row.id} className={selected?.id === row.id ? "selected-row" : ""} onClick={() => setSelected(row)}>
-                    <td>#{row.group_rank ?? "—"}</td>
-                    <td><strong>{row.employee_name}</strong><br /><small>{row.employee_email}</small></td>
-                    <td>{row.nome_gruppo ?? "—"}</td>
+                    <td><strong>#{index + 1}</strong></td>
+                    <td>
+                      <strong>{row.employee_name}</strong>
+                      <br />
+                      <small className="muted">{row.employee_email}</small>
+                    </td>
+                    <td>{areaName(row)}</td>
                     <td><strong>{fmt(row.performance_index)}</strong></td>
                     <td><span className={levelClass(row.livello)}>{row.livello}</span></td>
                     <td>{fmt(row.k1_saturazione)}</td>
@@ -318,12 +340,12 @@ export default function KpiPerformance() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
 
-        <aside className="kpi-detail-panel kpi-detail-panel-clear">
+        <aside className="kpi-detail-panel">
+          <div className="panel-title"><Info size={16} /> Scheda individuale</div>
           {selected ? (
             <>
-              <div className="panel-title"><HelpCircle size={18} /> Scheda individuale</div>
               <h3>{selected.employee_name}</h3>
               <p className="muted">{selected.nome_ruolo ?? "Ruolo KPI non assegnato"} · {selected.company_name ?? "Società non assegnata"}</p>
               <div className="kpi-detail-grid">
@@ -331,58 +353,102 @@ export default function KpiPerformance() {
                 <span>Livello<strong>{selected.livello}</strong></span>
                 <span>Righe validate<strong>{selected.validated_rows}/{selected.total_rows}</strong></span>
                 <span>Ore produttive<strong>{fmt(selected.productive_hours)}</strong></span>
-                <span>Ore disponibili<strong>{fmt(selected.available_hours_net)}</strong></span>
-                <span>Standard prodotto<strong>{fmt(selected.standard_units)}</strong></span>
-                <span>Rilavorazioni<strong>{fmt(selected.rework_hours)}</strong></span>
-                <span>Giornate<strong>{fmt(selected.working_days)}</strong></span>
               </div>
-
-              <div className="kpi-diagnosis-box">
-                <strong>Perché esce questo risultato?</strong>
-                {selectedDiagnosis.map((item) => (
-                  <div key={`${item.title}-${item.text}`} className={`kpi-diagnosis-item ${item.tone ?? "warn"}`}>
-                    <span>{item.title}</span>
-                    <p>{item.text}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="kpi-trace-box">
-                <strong>Ultime attività considerate</strong>
-                {trace.slice(0, 5).map((item) => (
-                  <div key={item.timesheet_entry_id} className="kpi-trace-row">
-                    <span>{item.data}</span>
-                    <p>{item.codice_commessa ?? "—"} · {item.codice_attivita ?? "—"}</p>
-                    <small>Ore {fmt(item.ore)} · Std {fmt(item.standard_units)} · Qualità {fmt(item.quality_points)}</small>
-                  </div>
-                ))}
-                {!trace.length && <p className="muted">Nessun dettaglio disponibile.</p>}
-              </div>
-
+              <p className="muted">{selected.eligibility_reason || "Nessuna anomalia bloccante registrata."}</p>
               <div className="panel-actions">
                 <button className="button secondary" onClick={previewIndividual}><Eye size={16} /> Anteprima PDF</button>
-                <button className="button" onClick={() => downloadKpiIndividualPdf(selected, trace)}><Download size={16} /> Scarica</button>
+                <button className="button secondary" onClick={() => downloadKpiIndividualPdf(selected, trace)}><Download size={16} /> Scarica</button>
               </div>
             </>
-          ) : <p>Seleziona un dipendente dalla classifica.</p>}
+          ) : (
+            <p>Calcola il periodo o seleziona una riga.</p>
+          )}
         </aside>
+      </div>
+
+      <section className="panel kpi-section-card">
+        <div className="panel-header align-start">
+          <div>
+            <h3>Classifica per area</h3>
+            <p>Ogni area ha il proprio ordinamento. Il primo di area non è automaticamente il migliore assoluto.</p>
+          </div>
+        </div>
+
+        <div className="kpi-area-board">
+          {areaGroups.map((group) => (
+            <div className="kpi-area-card" key={group.area}>
+              <div className="kpi-area-card-head">
+                <div>
+                  <span className="eyebrow">Area</span>
+                  <h4>{group.area}</h4>
+                </div>
+                <span className="count-badge">{group.rows.length}</span>
+              </div>
+              <ol className="kpi-area-ranking-list">
+                {group.rows.slice(0, 5).map((row, index) => (
+                  <li key={row.id} onClick={() => setSelected(row)} className={selected?.id === row.id ? "active" : ""}>
+                    <span>#{index + 1}</span>
+                    <strong>{row.employee_name}</strong>
+                    <em>{fmt(row.performance_index)}/100</em>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel kpi-section-card">
+        <div className="panel-header align-start">
+          <div>
+            <h3>Migliori per area</h3>
+            <p>Vista rapida dei vincitori di area. Il migliore assoluto è il valore più alto tra tutti.</p>
+          </div>
+        </div>
+        <div className="table-wrap elevated-table">
+          <table className="data-table compact">
+            <thead>
+              <tr>
+                <th>Area</th>
+                <th>Primo di area</th>
+                <th>PI</th>
+                <th>Livello</th>
+                <th>Esito</th>
+              </tr>
+            </thead>
+            <tbody>
+              {areaWinners.map(({ area, winner }) => (
+                <tr key={area} onClick={() => setSelected(winner)} className={selected?.id === winner.id ? "selected-row" : ""}>
+                  <td>{area}</td>
+                  <td><strong>{winner.employee_name}</strong><br /><small className="muted">{winner.employee_email}</small></td>
+                  <td><strong>{fmt(winner.performance_index)}</strong></td>
+                  <td><span className={levelClass(winner.livello)}>{winner.livello}</span></td>
+                  <td>{winner.is_top_performer || winner.eligible ? "Top performer" : "Solo primo di area"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {infoMetric && (
-        <div className="modal-backdrop">
-          <div className="modal-card kpi-info-modal">
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal narrow">
             <div className="modal-header">
               <div>
                 <span className="eyebrow">{infoMetric.code}</span>
-                <h3>{infoMetric.nome_breve ?? infoMetric.nome}</h3>
+                <h3>{infoMetric.popup_titolo ?? infoMetric.nome_breve ?? infoMetric.nome}</h3>
               </div>
               <button className="icon-button" onClick={() => setInfoMetric(null)}>×</button>
             </div>
-            <div className="prose kpi-info-body">
-              <p>{infoMetric.popup_testo ?? infoMetric.descrizione ?? metricExplanation(infoMetric.code)}</p>
-              <p><strong>Formula:</strong> {infoMetric.formula_label ?? metricExplanation(infoMetric.code)}</p>
-              <p><strong>Soglia:</strong> {fmt(infoMetric.soglia_minima)} · <strong>Peso:</strong> {fmt(infoMetric.peso_percentuale)}%</p>
-              {infoMetric.note && <p><strong>Note:</strong> {infoMetric.note}</p>}
+            <p className="prose">{infoMetric.popup_testo ?? infoMetric.descrizione}</p>
+            <div className="kpi-detail-grid">
+              <span>Peso<strong>{fmt(infoMetric.peso_percentuale)}%</strong></span>
+              <span>Soglia<strong>{fmt(infoMetric.soglia_minima ?? 0)}</strong></span>
+              <span>Scala<strong>0-100</strong></span>
+            </div>
+            <div className="modal-actions">
+              <button className="button" onClick={() => setInfoMetric(null)}>Chiudi</button>
             </div>
           </div>
         </div>

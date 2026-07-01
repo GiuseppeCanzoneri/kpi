@@ -23,6 +23,39 @@ function safe(value: unknown, fallback = "—") {
   return String(value);
 }
 
+function score(row: KpiDashboardRow) {
+  return Number(row.performance_index ?? 0);
+}
+
+function areaName(row: KpiDashboardRow) {
+  return row.nome_gruppo || row.nome_area || row.codice_area || "Senza area";
+}
+
+function sortOverall(rows: KpiDashboardRow[]) {
+  return [...rows].sort((a, b) => {
+    const byScore = score(b) - score(a);
+    if (byScore !== 0) return byScore;
+    const byQuality = Number(b.k4_qualita ?? 0) - Number(a.k4_qualita ?? 0);
+    if (byQuality !== 0) return byQuality;
+    const byDeadline = Number(b.k5_puntualita ?? 0) - Number(a.k5_puntualita ?? 0);
+    if (byDeadline !== 0) return byDeadline;
+    const byProduction = Number(b.k2_produzione ?? 0) - Number(a.k2_produzione ?? 0);
+    if (byProduction !== 0) return byProduction;
+    return String(a.employee_name ?? "").localeCompare(String(b.employee_name ?? ""));
+  });
+}
+
+function groupByArea(rows: KpiDashboardRow[]) {
+  const grouped = new Map<string, KpiDashboardRow[]>();
+  rows.forEach((row) => {
+    const key = areaName(row);
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  });
+  return [...grouped.entries()]
+    .map(([area, areaRows]) => ({ area, rows: sortOverall(areaRows) }))
+    .sort((a, b) => a.area.localeCompare(b.area));
+}
+
 function addHeader(doc: jsPDF, title: string, subtitle: string) {
   const width = doc.internal.pageSize.getWidth();
   doc.setFillColor(18, 59, 99);
@@ -43,6 +76,7 @@ function addFooter(doc: jsPDF) {
   const height = doc.internal.pageSize.getHeight();
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(110, 122, 140);
     doc.text(`Generato il ${new Date().toLocaleString("it-IT")} · KPI Performance`, pageMargin, height - 8);
@@ -99,6 +133,13 @@ function drawTableHeader(doc: jsPDF, columns: TableColumn[], y: number, headerHe
   return y + headerHeight;
 }
 
+function ensureSpace(doc: jsPDF, y: number, needed = 20) {
+  const bottomLimit = doc.internal.pageSize.getHeight() - 16;
+  if (y + needed <= bottomLimit) return y;
+  doc.addPage();
+  return 28;
+}
+
 function drawManualTable(doc: jsPDF, options: TableOptions) {
   const fontSize = options.fontSize ?? 7;
   const rowPadding = options.rowPadding ?? 2;
@@ -145,6 +186,7 @@ function drawManualTable(doc: jsPDF, options: TableOptions) {
 
 function addTextBlock(doc: jsPDF, title: string, text: string, y: number) {
   const width = doc.internal.pageSize.getWidth() - pageMargin * 2;
+  y = ensureSpace(doc, y, 18);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(20, 32, 51);
@@ -169,7 +211,7 @@ export function createKpiIndividualPdf(row: KpiDashboardRow, trace: KpiTraceRow[
   let y = cards(doc, [
     { label: "Indice", value: `${fmt(row.performance_index)}/100` },
     { label: "Livello", value: safe(row.livello) },
-    { label: "Classifica", value: `#${safe(row.group_rank)}` },
+    { label: "Rank area", value: `#${safe(row.group_rank)}` },
     { label: "Riconoscimento", value: row.is_top_performer || row.eligible ? "Top performer" : "No" },
     { label: "Righe validate", value: `${safe(row.validated_rows)}/${safe(row.total_rows)}` },
   ]);
@@ -228,40 +270,53 @@ export function createKpiIndividualPdf(row: KpiDashboardRow, trace: KpiTraceRow[
   return doc;
 }
 
-export function createKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classifica KPI") {
-  const sortedRows = [...rows].sort((a, b) => Number(b.performance_index ?? 0) - Number(a.performance_index ?? 0));
+export function createKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classifica KPI generale e per area") {
+  const sortedRows = sortOverall(rows);
+  const groups = groupByArea(rows);
+  const bestOverall = sortedRows[0] ?? null;
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  addHeader(doc, title, "Classifica ordinata per indice. Top performer solo se supera soglie e controlli obbligatori.");
-  const y = cards(
+  addHeader(doc, title, "Classifica generale ordinata per PI e classifica separata per area/gruppo omogeneo.");
+
+  let y = cards(
     doc,
     [
       { label: "Valutabili", value: String(sortedRows.length) },
+      { label: "Migliore assoluto", value: bestOverall ? `${safe(bestOverall.employee_name)} · ${fmt(bestOverall.performance_index)}` : "—" },
       { label: "Top performer", value: String(sortedRows.filter((r) => r.is_top_performer || r.eligible).length) },
       { label: "Scala", value: "0-100" },
     ],
     30
   );
 
-  drawManualTable(doc, {
+  y = addTextBlock(
+    doc,
+    "Classifica generale",
+    "Ordine unico dal punteggio più alto al più basso. Il primo classificato generale non coincide necessariamente con il Top performer.",
+    y + 4
+  );
+
+  y = drawManualTable(doc, {
     startY: y + 2,
-    fontSize: 8,
+    fontSize: 7.6,
     columns: [
-      { header: "Rank", width: 18, align: "center" },
-      { header: "Dipendente", width: 48 },
-      { header: "Gruppo", width: 34 },
-      { header: "PI", width: 22, align: "right" },
-      { header: "K1", width: 20, align: "right" },
-      { header: "K2", width: 20, align: "right" },
-      { header: "K3", width: 20, align: "right" },
-      { header: "K4", width: 20, align: "right" },
-      { header: "K5", width: 20, align: "right" },
-      { header: "Riconoscimento", width: 71 },
+      { header: "Rank gen.", width: 18, align: "center" },
+      { header: "Dipendente", width: 47 },
+      { header: "Area", width: 32 },
+      { header: "PI", width: 20, align: "right" },
+      { header: "Livello", width: 24 },
+      { header: "K1", width: 18, align: "right" },
+      { header: "K2", width: 18, align: "right" },
+      { header: "K3", width: 18, align: "right" },
+      { header: "K4", width: 18, align: "right" },
+      { header: "K5", width: 18, align: "right" },
+      { header: "Esito", width: 62 },
     ],
-    rows: sortedRows.map((r) => [
-      `#${safe(r.group_rank)}`,
+    rows: sortedRows.map((r, index) => [
+      `#${index + 1}`,
       `${safe(r.employee_name)}\n${safe(r.employee_email, "")}`.trim(),
-      safe(r.nome_gruppo),
+      areaName(r),
       fmt(r.performance_index),
+      safe(r.livello),
       fmt(r.k1_saturazione),
       fmt(r.k2_produzione),
       fmt(r.k3_efficienza),
@@ -269,6 +324,39 @@ export function createKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classi
       fmt(r.k5_puntualita),
       r.is_top_performer || r.eligible ? "Top performer" : safe(r.eligibility_reason, "Solo classifica"),
     ]),
+  });
+
+  groups.forEach((group) => {
+    y = ensureSpace(doc, y + 12, 35);
+    y = addTextBlock(doc, `Classifica area: ${group.area}`, `Primo di area: ${safe(group.rows[0]?.employee_name)} · PI ${fmt(group.rows[0]?.performance_index)}/100`, y);
+    y = drawManualTable(doc, {
+      startY: y + 2,
+      fontSize: 7.6,
+      columns: [
+        { header: "Rank area", width: 22, align: "center" },
+        { header: "Dipendente", width: 62 },
+        { header: "PI", width: 22, align: "right" },
+        { header: "Livello", width: 26 },
+        { header: "K1", width: 20, align: "right" },
+        { header: "K2", width: 20, align: "right" },
+        { header: "K3", width: 20, align: "right" },
+        { header: "K4", width: 20, align: "right" },
+        { header: "K5", width: 20, align: "right" },
+        { header: "Esito", width: 61 },
+      ],
+      rows: group.rows.map((r, index) => [
+        `#${index + 1}`,
+        `${safe(r.employee_name)}\n${safe(r.employee_email, "")}`.trim(),
+        fmt(r.performance_index),
+        safe(r.livello),
+        fmt(r.k1_saturazione),
+        fmt(r.k2_produzione),
+        fmt(r.k3_efficienza),
+        fmt(r.k4_qualita),
+        fmt(r.k5_puntualita),
+        r.is_top_performer || r.eligible ? "Top performer" : "Solo classifica",
+      ]),
+    });
   });
 
   addFooter(doc);
@@ -279,6 +367,6 @@ export function downloadKpiIndividualPdf(row: KpiDashboardRow, trace: KpiTraceRo
   downloadPdf(createKpiIndividualPdf(row, trace), `${safeFilename(`kpi-${row.employee_name}`)}.pdf`);
 }
 
-export function downloadKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classifica KPI") {
+export function downloadKpiLeaderboardPdf(rows: KpiDashboardRow[], title = "Classifica KPI generale e per area") {
   downloadPdf(createKpiLeaderboardPdf(rows, title), `${safeFilename(title)}.pdf`);
 }

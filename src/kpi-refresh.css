@@ -4694,3 +4694,224 @@ body {
     flex-direction: column;
   }
 }
+
+/* === KPI classifica generale + classifica per area === */
+.kpi-rankings-page .kpi-rank-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.kpi-rankings-page .kpi-hero-award {
+  margin-bottom: 0;
+  min-height: 190px;
+}
+
+.kpi-rankings-page .kpi-hero-award h3 {
+  margin: 8px 0 10px;
+  font-size: clamp(1.55rem, 2vw, 2.2rem);
+  letter-spacing: -0.04em;
+  color: #0f172a;
+}
+
+.kpi-rankings-page .kpi-hero-award p {
+  margin: 0 0 14px;
+  color: #64748b;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.kpi-absolute-score {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #0f4e83, #155f9b);
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1;
+  font-weight: 950;
+  box-shadow: 0 16px 36px rgba(15, 78, 131, 0.2);
+  margin-right: 10px;
+}
+
+.kpi-top-performer-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid #d6e4f0;
+  background: #f8fbff;
+}
+
+.kpi-avatar.small-avatar {
+  width: 58px;
+  height: 58px;
+  font-size: 24px;
+  margin: 0;
+}
+
+.kpi-general-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.kpi-general-metric-card {
+  text-align: left;
+  border: 1px solid #d5e2ef;
+  background: #fff;
+  border-radius: 22px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  min-height: 170px;
+  cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+.kpi-general-metric-card:hover {
+  transform: translateY(-2px);
+  border-color: #99c1e6;
+  box-shadow: 0 18px 42px rgba(15, 78, 131, .10);
+}
+
+.kpi-code-pill {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #e8f3ff;
+  color: #0f4e83;
+  font-weight: 900;
+}
+
+.kpi-general-metric-card strong {
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.kpi-general-metric-card b {
+  display: block;
+  font-size: 2.1rem;
+  letter-spacing: -0.05em;
+  color: #0f172a;
+}
+
+.kpi-general-metric-card small {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.rankings-layout {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.kpi-leaderboard-table td,
+.kpi-leaderboard-table th {
+  white-space: nowrap;
+}
+
+.kpi-leaderboard-table td:nth-child(2),
+.kpi-leaderboard-table th:nth-child(2) {
+  min-width: 210px;
+}
+
+.kpi-area-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.kpi-area-card {
+  border: 1px solid #d6e4f0;
+  border-radius: 22px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 12px 30px rgba(15, 78, 131, .06);
+}
+
+.kpi-area-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5eef7;
+  margin-bottom: 12px;
+}
+
+.kpi-area-card-head h4 {
+  margin: 5px 0 0;
+  color: #0f172a;
+  font-size: 1.15rem;
+}
+
+.kpi-area-ranking-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.kpi-area-ranking-list li {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 16px;
+  background: #f8fbff;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.kpi-area-ranking-list li:hover,
+.kpi-area-ranking-list li.active {
+  border-color: #b7d4ee;
+  background: #eef7ff;
+}
+
+.kpi-area-ranking-list span {
+  font-weight: 950;
+  color: #0f4e83;
+}
+
+.kpi-area-ranking-list strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi-area-ranking-list em {
+  font-style: normal;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+@media (max-width: 1180px) {
+  .kpi-rankings-page .kpi-rank-hero-grid,
+  .rankings-layout {
+    grid-template-columns: 1fr;
+  }
+  .kpi-general-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .kpi-general-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+  .kpi-absolute-score {
+    width: 100%;
+    margin: 0 0 10px;
+  }
+}
