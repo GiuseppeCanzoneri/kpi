@@ -66,7 +66,7 @@ function RoleBadge({ role }: { role: KpiRole }) {
 }
 
 export default function Accessi() {
-  const { user, isSuperAdmin, isAdminArea, areaIds, refreshRoles } = useAuth();
+  const {  isSuperAdmin, isAdminArea, areaIds, refreshRoles } = useAuth();
   const canAdmin = isSuperAdmin || isAdminArea;
 
   const [companies, setCompanies] = useState<Company[]>([]);
