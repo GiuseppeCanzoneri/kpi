@@ -3551,3 +3551,465 @@ body {
     grid-column: auto !important;
   }
 }
+/* === KPI VALIDAZIONE CHIARA - appendere in fondo a src/kpi-refresh.css === */
+.kpi-validation-page {
+  --validation-blue: #123b63;
+  --validation-green: #087443;
+  --validation-gold: #c69a45;
+  --validation-red: #b42318;
+}
+
+.kpi-validation-guide {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.4fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.kpi-validation-guide h3 {
+  margin: 4px 0 10px;
+  font-size: 26px;
+  letter-spacing: -0.04em;
+}
+
+.kpi-validation-guide p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.kpi-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kpi-guide-grid div {
+  border: 1px solid #d9e4ee;
+  border-radius: 18px;
+  padding: 14px;
+  background: #fff;
+  display: grid;
+  gap: 5px;
+}
+
+.kpi-guide-grid strong {
+  color: #0f1b2d;
+  font-size: 14px;
+}
+
+.kpi-guide-grid span {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.validation-stats-grid {
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+}
+
+.validation-toolbar {
+  display: grid;
+  gap: 14px;
+}
+
+.validation-filters-grid {
+  display: grid;
+  grid-template-columns: 150px 150px minmax(220px, 1fr) minmax(240px, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.validation-filters-grid label {
+  display: grid;
+  gap: 7px;
+  color: #42526b;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.validation-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.validation-search-box {
+  flex: 1 1 360px;
+}
+
+.validation-rule-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #f2f7fc;
+  border: 1px solid #d9e7f4;
+  color: #42526b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.validation-rule-note svg {
+  flex: 0 0 auto;
+  color: var(--validation-blue);
+  margin-top: 1px;
+}
+
+.validation-list {
+  display: grid;
+  gap: 14px;
+}
+
+.validation-row-card {
+  display: grid;
+  grid-template-columns: 34px 118px minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #d7e1ec;
+  border-left: 6px solid var(--validation-gold);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(22, 44, 74, 0.07);
+}
+
+.validation-row-card.is-validated {
+  border-left-color: var(--validation-green);
+}
+
+.validation-row-card.is-selected {
+  outline: 3px solid rgba(18, 59, 99, 0.16);
+}
+
+.validation-checkbox {
+  display: grid;
+  place-items: center;
+}
+
+.validation-checkbox input {
+  width: 18px;
+  height: 18px;
+}
+
+.validation-date-card {
+  min-height: 92px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #123b63, #1d5d91);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  box-shadow: 0 14px 30px rgba(18, 59, 99, 0.22);
+}
+
+.validation-date-card strong {
+  display: block;
+  font-size: 25px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.validation-date-card span {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 850;
+  font-size: 13px;
+}
+
+.validation-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+}
+
+.validation-row-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.validation-row-head h3 {
+  margin: 0;
+  color: #101b2d;
+  font-size: 21px;
+  letter-spacing: -0.035em;
+}
+
+.validation-row-head p,
+.validation-description {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.validation-description {
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.validation-status,
+.quality-chip,
+.validation-mini-facts span {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.validation-status.ok {
+  background: #e7f8ef;
+  color: #087443;
+}
+
+.validation-status.todo {
+  background: #fff7df;
+  color: #8a4b00;
+}
+
+.validation-mini-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.validation-mini-facts span {
+  background: #f2f6fa;
+  color: #42526b;
+}
+
+.quality-chip.good {
+  background: #e7f8ef !important;
+  color: #087443 !important;
+}
+
+.quality-chip.excellent {
+  background: #e7f1ff !important;
+  color: #125495 !important;
+}
+
+.quality-chip.warning {
+  background: #fff7df !important;
+  color: #8a4b00 !important;
+}
+
+.quality-chip.danger {
+  background: #fff1f0 !important;
+  color: #b42318 !important;
+}
+
+.validation-row-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 128px;
+}
+
+.validation-modal {
+  width: min(1180px, calc(100vw - 34px));
+  max-height: min(92vh, 980px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.validation-modal-header {
+  padding: 22px 24px;
+  margin: 0;
+  border-bottom: 1px solid #d9e4ee;
+}
+
+.validation-modal-header h3 {
+  margin: 3px 0 6px;
+  font-size: 26px;
+}
+
+.validation-modal-header p {
+  margin: 0;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.validation-modal-layout {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 0;
+  max-height: calc(92vh - 178px);
+  overflow: auto;
+}
+
+.validation-score-panel {
+  border-right: 1px solid #d9e4ee;
+  padding: 20px;
+  background: linear-gradient(180deg, #f6faff, #eef5fb);
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.score-preview-card {
+  border: 1px solid #d7e4f1;
+  border-radius: 20px;
+  padding: 16px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(22, 44, 74, 0.06);
+  display: grid;
+  gap: 5px;
+}
+
+.score-preview-card span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.score-preview-card strong {
+  color: #0f1b2d;
+  font-size: 30px;
+  letter-spacing: -0.05em;
+}
+
+.score-preview-card small {
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.validation-positive-box {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-radius: 18px;
+  padding: 14px;
+  background: #e7f8ef;
+  border: 1px solid #c8f0dd;
+  color: #075e36;
+}
+
+.validation-positive-box p {
+  margin: 4px 0 0;
+  line-height: 1.35;
+  font-size: 13px;
+}
+
+.validation-presets {
+  display: grid;
+  gap: 8px;
+}
+
+.validation-presets button {
+  border: 1px solid #d7e1ec;
+  background: #fff;
+  color: #123b63;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 850;
+  text-align: left;
+}
+
+.validation-presets button:hover {
+  background: #f5f9fc;
+  transform: translateY(-1px);
+}
+
+.validation-form-panel {
+  padding: 20px;
+  background: #fff;
+}
+
+.validation-current-work {
+  border: 1px dashed #cbd8e5;
+  background: #f8fbfd;
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.validation-current-work p {
+  margin: 7px 0 0;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.validation-form-grid {
+  padding: 0;
+}
+
+.validation-form-grid label small {
+  color: #6c7a8c;
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+.validation-check-row {
+  align-content: start;
+  align-items: flex-start !important;
+  padding: 13px;
+  border: 1px solid #d9e4ee;
+  border-radius: 16px;
+  background: #f8fbfd;
+}
+
+.validation-check-row span {
+  font-weight: 900;
+  color: #0f1b2d;
+}
+
+.validation-check-row small {
+  width: 100%;
+  margin-left: 28px;
+}
+
+.validation-note-field textarea {
+  min-height: 118px;
+}
+
+.note-suggest-button {
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.validation-modal-actions {
+  margin: 0;
+  padding: 18px 24px;
+  border-top: 1px solid #d9e4ee;
+  background: #fff;
+}
+
+@media (max-width: 1150px) {
+  .validation-stats-grid,
+  .validation-filters-grid,
+  .kpi-validation-guide,
+  .kpi-guide-grid,
+  .validation-modal-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .validation-score-panel {
+    border-right: 0;
+    border-bottom: 1px solid #d9e4ee;
+  }
+}
+
+@media (max-width: 760px) {
+  .validation-row-card {
+    grid-template-columns: 1fr;
+  }
+
+  .validation-row-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .validation-date-card {
+    min-height: 76px;
+  }
+}
