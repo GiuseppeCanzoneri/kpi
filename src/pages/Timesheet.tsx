@@ -603,7 +603,7 @@ export default function Timesheet() {
             <div className="modal-header ts-modal-header">
               <div>
                 <span className="eyebrow">Timesheet</span>
-                <h3>{form.id ? "Modifica registrazione" : "Nuova registrazione ore"}</h3>
+                <h3>{form.id ? "Modifica registrazione" : "Registra la tua giornata"}</h3>
                 <p className="muted">Le ore vengono salvate sempre come <strong>Approvato</strong>. La contestazione è un controllo successivo.</p>
               </div>
               <button className="icon-button" onClick={() => setForm(null)} aria-label="Chiudi"><X size={18} /></button>
