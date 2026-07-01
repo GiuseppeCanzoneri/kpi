@@ -4,7 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 
 const baseItems = [
   { to: "/", label: "Dashboard", icon: BarChart3 },
-  { to: "/timesheet", label: "Timesheet", icon: Clock3 },
+  { to: "/timesheet", label: "Registra Ore", icon: Clock3 },
   { to: "/kpi", label: "KPI Performance", icon: Gauge },
   { to: "/kpi/validazione", label: "Validazione KPI", icon: Medal, adminOnly: true },
   { to: "/kpi/impostazioni", label: "Impostazioni K1-K5", icon: SlidersHorizontal, adminOnly: true },
