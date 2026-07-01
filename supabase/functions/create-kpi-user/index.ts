@@ -72,6 +72,8 @@ async function findAuthUserIdByEmail(admin: ReturnType<typeof createClient>, ema
 }
 
 
+
+
 async function sendCredentialsEmail(params: {
   to: string;
   nome: string;
